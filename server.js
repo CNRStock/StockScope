@@ -91,7 +91,7 @@ async function createPortal(req,res){
 }
 async function refreshBillingStatus(req,res){
   if(!billingEnabled)return json(res,503,{error:"Pro billing is not enabled yet."});
-  try{const user=await authenticatedUser(req),profile=await billingProfile(user.id);if(!profile?.stripe_subscription_id)return json(res,200,{profile});const subscription=await stripe.subscriptions.retrieve(profile.stripe_subscription_id),rows=await updateSubscription(subscription,user.id);return json(res,200,{profile:rows?.[0]||profile})}catch(error){console.error("Stripe status refresh failed:",error.message);return json(res,400,{error:error.message})}
+  try{const user=await authenticatedUser(req),profile=await billingProfile(user.id);if(!profile?.stripe_subscription_id)return json(res,200,{profile});const subscription=await stripe.subscriptions.retrieve(profile.stripe_subscription_id),fresh=subscriptionRecord(subscription);await updateSubscription(subscription,user.id);return json(res,200,{profile:{...profile,...fresh}})}catch(error){console.error("Stripe status refresh failed:",error.message);return json(res,400,{error:error.message})}
 }
 async function stripeWebhook(req,res){
   if(!billingEnabled)return json(res,503,{error:"Billing is disabled."});
