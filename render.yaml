@@ -1,0 +1,30 @@
+services:
+  - type: web
+    name: stockscope-private-beta
+    runtime: node
+    buildCommand: npm install && npm test
+    startCommand: npm start
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PRIVATE_BETA
+        value: "true"
+      - key: TRUST_PROXY
+        value: "true"
+      - key: API_RATE_LIMIT
+        value: "120"
+      - key: EXPENSIVE_RATE_LIMIT
+        value: "20"
+      - key: EODHD_API_KEY
+        sync: false
+      - key: SEC_USER_AGENT
+        sync: false
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_PUBLISHABLE_KEY
+        sync: false
+      - key: BETA_USERNAME
+        sync: false
+      - key: BETA_PASSWORD
+        sync: false

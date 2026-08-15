@@ -1,0 +1,245 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<meta name="theme-color" content="#080a0f"/>
+<title>StockScope — See the investment you missed. Find what could be next.</title>
+<link rel="icon" href="/logo-mark.svg" type="image/svg+xml"/>
+<link rel="stylesheet" href="/styles.css"/>
+</head>
+<body>
+<div class="noise"></div>
+<header class="nav">
+  <a id="homeLogo" class="logo" href="#discover"><img class="logo-orb" src="/logo-mark.svg" alt=""/>StockScope</a>
+  <nav class="navlinks">
+    <button data-view="discover" class="navlink active">Discover</button>
+    <button data-view="portfolio" class="navlink">Portfolio</button>
+    <button data-view="saved" class="navlink">Saved</button>
+    <button data-view="alerts" class="navlink">Alerts</button>
+    <button data-view="method" class="navlink">Method</button>
+  </nav>
+  <div id="apiPill" class="api-pill"><span></span>Checking data</div>
+  <button id="accountButton" class="account-button">Sign in</button>
+</header>
+
+<main>
+<section id="discover" class="view active">
+  <section class="hero">
+    <div class="hero-copy">
+      <div class="kicker"><span>✦</span> BACKTEST THE PAST. STUDY THE PATTERN.</div>
+      <h1>See what your <em>investment</em> could have become.</h1>
+      <p>Replay a real historical investment, understand what drove the winner, then compare its earlier financial profile with companies today.</p>
+      <div class="trust-row">
+        <span>Adjusted prices</span><i></i><span>Explainable scoring</span><i></i><span>No hype forecasts</span>
+      </div>
+    </div>
+
+    <div class="hero-card">
+      <div class="card-glow"></div>
+      <div class="asset-switch" aria-label="Asset type">
+        <button class="asset-type active" data-asset="stock"><b>Stocks</b><span>Listed companies</span></button>
+        <button class="asset-type" data-asset="crypto"><b>Crypto</b><span>Coins and tokens</span></button>
+      </div>
+      <div class="mini-top">
+        <span class="mini-label">QUICK SIMULATION</span>
+        <span class="live-dot">LIVE DATA</span>
+      </div>
+      <div class="stock-field">
+        <label id="assetLabel">Company</label>
+        <div class="stock-input-wrap">
+          <div id="tickerAvatar" class="ticker-avatar">N</div>
+          <div>
+            <input id="ticker" value="NVDA" maxlength="12" aria-label="Ticker"/>
+            <small id="assetHint">US ticker symbol</small>
+          </div>
+        </div>
+      </div>
+      <div class="amount-big">
+        <label>I invest</label>
+        <div><span>£</span><input id="amount" type="number" min=".01" step=".01" value="6"/><small id="frequencySuffix">/ day</small></div>
+      </div>
+      <div class="date-grid">
+        <label>From<input id="start" type="date" value="2016-01-01"/></label>
+        <label>Until<input id="end" type="date" value="2026-01-01"/></label>
+      </div>
+      <div class="frequency">
+        <button class="freq active" data-freq="daily">Daily</button>
+        <button class="freq" data-freq="weekly">Weekly</button>
+        <button class="freq" data-freq="monthly">Monthly</button>
+      </div>
+      <button id="run" class="cta"><span>Calculate</span><b>→</b></button>
+      <p id="formMessage" class="form-message"></p>
+    </div>
+  </section>
+
+  <section class="watchlist-section" aria-labelledby="watchlistTitle">
+    <div class="watchlist-head"><div><div class="kicker">FEATURED RESEARCH THEMES</div><h2 id="watchlistTitle">Ideas worth investigating.</h2><p>Illustrative research starting points—not rankings, recommendations or predictions.</p></div><div class="carousel-controls"><button id="carouselPrev" aria-label="Previous">←</button><button id="carouselNext" aria-label="Next">→</button></div></div>
+    <div id="researchCarousel" class="research-carousel">
+      <article class="research-slide active"><span class="asset-badge">STOCK · NVDA</span><h3>AI compute infrastructure</h3><p>Accelerated computing, semiconductors and data-centre demand.</p></article>
+      <article class="research-slide"><span class="asset-badge">STOCK · VRT</span><h3>Power and cooling</h3><p>Infrastructure supporting higher-density data centres.</p></article>
+      <article class="research-slide"><span class="asset-badge">STOCK · IONQ</span><h3>Quantum computing</h3><p>An emerging field with substantial technical and commercial uncertainty.</p></article>
+      <article class="research-slide"><span class="asset-badge">CRYPTO · BTC</span><h3>Digital scarcity</h3><p>Liquidity, adoption and store-of-value research signals.</p></article>
+      <article class="research-slide"><span class="asset-badge">CRYPTO · QNT</span><h3>Blockchain interoperability</h3><p>Enterprise connectivity with material adoption and token risks.</p></article>
+    </div><div id="carouselDots" class="carousel-dots" aria-label="Carousel pages"></div>
+  </section>
+
+  <section id="result" class="result hidden">
+    <div class="result-titlebar">
+      <div>
+        <div class="kicker">HISTORICAL BACKTEST</div>
+        <h2>Your <span id="rTicker">NVDA</span> timeline</h2>
+        <p id="rSubtitle"></p>
+      </div>
+      <button id="save" class="ghost">☆ Save simulation</button>
+    </div>
+
+    <div class="metric-grid">
+      <article class="metric primary-metric">
+        <span>You invested</span>
+        <strong id="mInvested">—</strong>
+        <small id="mContrib">—</small>
+      </article>
+      <article class="metric">
+        <span>Ending value</span>
+        <strong id="mValue">—</strong>
+        <small>converted to GBP at ending FX rate</small>
+      </article>
+      <article class="metric">
+        <span>Profit / loss</span>
+        <strong id="mProfit">—</strong>
+        <small id="mReturn">—</small>
+      </article>
+      <article class="metric">
+        <span>Shares accumulated</span>
+        <strong id="mShares">—</strong>
+        <small>fractional-share model</small>
+      </article>
+    </div>
+
+    <button id="findSimilar" class="discovery-cta"><span>Discover similar opportunities</span><b>→</b></button>
+    <section class="chart-shell glass">
+      <div class="chart-head">
+        <div>
+          <span>Portfolio journey</span>
+          <small>Adjusted historical prices</small>
+        </div>
+        <div class="legend"><span><i class="lime"></i>Value</span><span><i class="blue"></i>Contributions</span></div>
+      </div>
+      <canvas id="chart" width="1200" height="480"></canvas>
+      <div class="chart-foot"><span id="providerText">Source: —</span><span>Past performance is not a guide to future returns.</span></div>
+    </section>
+
+    <div id="stockResearch" class="story-grid">
+      <section class="glass insight">
+        <div class="section-tag">THE PATTERN</div>
+        <h3 id="fundamentalsTitle">Historical financial profile</h3>
+        <p id="fundamentalsNote">Run a simulation to load the latest annual financial statements available at the investment start date.</p>
+        <div id="fundamentalsList" class="factor-list">
+          <div><span>Revenue growth</span><b>—</b></div>
+          <div><span>Gross margin</span><b>—</b></div>
+          <div><span>Operating margin</span><b>—</b></div>
+          <div><span>R&amp;D intensity</span><b>—</b></div>
+          <div><span>Free-cash-flow margin</span><b>—</b></div>
+        </div>
+      </section>
+
+      <section class="glass next-card">
+        <div class="section-tag">DISCOVERY ENGINE</div>
+        <h3>How matches are ranked</h3>
+        <div class="discovery-method">
+          <div><b>01</b><span>Historical financial profile</span></div>
+          <div><b>02</b><span>Current SEC fundamentals</span></div>
+          <div><b>03</b><span>Technology-theme alignment</span></div>
+          <div><b>04</b><span>Weighted similarity score</span></div>
+        </div>
+        <p>The ranking is calculated from measurable financial characteristics and transparent technology themes. It identifies research matches, not guaranteed future winners.</p>
+      </section>
+    </div>
+    <section id="cryptoResearch" class="glass crypto-research hidden">
+      <div class="section-tag">CRYPTO RESEARCH</div>
+      <h3>Crypto discovery requires different evidence</h3>
+      <p>The historical calculation above is live. The crypto discovery engine will rank projects using adoption, liquidity, network activity, developer activity, token supply and concentration—not company accounting metrics.</p>
+    </section>
+  </section>
+</section>
+
+<section id="similar" class="view">
+  <div class="similar-head"><button id="backToResults" class="ghost">← Back to calculation</button><div class="kicker">MEASURABLE MATCHES</div><h1 id="similarTitle">Similar opportunities.</h1><p id="similarIntro">Ranked using comparable financial characteristics—not an AI stock-picking guess.</p></div>
+  <div id="similarStatus" class="glass similar-status">Calculate an investment first to build its historical profile.</div>
+  <div id="similarList" class="similar-list"></div>
+  <p class="similar-disclaimer">Similarity is a research signal, not a recommendation or forecast. A close financial profile does not imply comparable future returns.</p>
+</section>
+
+<section id="saved" class="view">
+  <div class="page-head"><div class="kicker">YOUR RESEARCH</div><h1>Saved simulations.</h1><p>Stored locally in this browser for now.</p></div>
+  <div id="savedList" class="saved-grid"></div>
+</section>
+
+<section id="alerts" class="view">
+  <div class="page-head alert-page-head"><div><div class="kicker">PORTFOLIO MONITOR</div><h1>Research alerts.</h1><p>Check saved portfolios for market movement and evidence-based risk thresholds.</p></div><button id="refreshAlerts" class="ghost">↻ Run alert check</button></div>
+  <div class="alert-summary"><article class="glass"><span>Critical</span><b id="criticalAlertCount">0</b></article><article class="glass"><span>Warnings</span><b id="warningAlertCount">0</b></article><article class="glass"><span>Information</span><b id="infoAlertCount">0</b></article></div>
+  <p id="alertStatus" class="similar-status glass">Sign in and save a portfolio to begin monitoring.</p>
+  <div id="alertList" class="alert-list"></div>
+  <p class="similar-disclaimer">Alerts are mechanical research thresholds, not instructions to buy, sell or hold. Delayed market data may not reflect the current executable price.</p>
+</section>
+
+<section id="portfolio" class="view">
+  <div class="page-head"><div class="kicker">PORTFOLIO ASSISTANT</div><h1>Build a research allocation.</h1><p>Choose the assets you want to investigate, set a recurring budget, and compare a transparent suggested split.</p></div>
+  <div class="portfolio-layout">
+    <section class="glass portfolio-builder">
+      <div class="portfolio-section-head"><div><span class="section-tag">SELECT ASSETS</span><h2>Your research basket</h2></div><small id="portfolioLimit">Free plan · up to 3 assets</small></div>
+      <form id="portfolioAddForm" class="portfolio-add">
+        <label>Ticker<input id="portfolioTicker" maxlength="12" placeholder="e.g. IONQ" required/></label>
+        <label>Type<select id="portfolioType"><option value="stock">Stock</option><option value="crypto">Crypto</option></select></label>
+        <button class="ghost" type="submit">+ Add asset</button>
+      </form>
+      <p id="portfolioMessage" class="form-message"></p>
+      <div id="portfolioAssets" class="portfolio-assets"></div>
+      <p id="portfolioPriceStatus" class="portfolio-price-status">Latest delayed prices load automatically in USD.</p>
+    </section>
+    <aside class="glass portfolio-budget">
+      <span class="section-tag">RECURRING BUDGET</span><h2>Contribution plan</h2>
+      <label>Amount per contribution<div class="portfolio-money"><span>£</span><input id="portfolioBudget" type="number" min="1" step="1" value="100"/></div></label>
+      <div id="portfolioFrequency" class="frequency"><button class="freq active" data-portfolio-freq="daily">Daily</button><button class="freq" data-portfolio-freq="weekly">Weekly</button><button class="freq" data-portfolio-freq="monthly">Monthly</button></div>
+      <p class="portfolio-model-note">Suggested weights use one year of volatility, liquidity, recent hype risk and theme concentration. Every factor is shown after calculation.</p>
+      <button id="buildEvidenceAllocation" class="cta" type="button"><span>Build suggested allocation</span><b>→</b></button>
+    </aside>
+  </div>
+  <section id="portfolioResult" class="glass portfolio-result hidden"><div class="portfolio-section-head"><div><span class="section-tag">EXPLAINABLE SCENARIO</span><h2>Suggested allocation</h2></div><strong id="portfolioTotal">100%</strong></div><p id="portfolioSummary"></p><div id="allocationList" class="allocation-list"></div><div class="allocation-total"><span>Total per contribution</span><b id="allocationAmount">£100</b></div><div class="portfolio-save"><label>Portfolio name<input id="portfolioName" maxlength="60" placeholder="e.g. Emerging technology plan"/></label><button id="savePortfolio" class="ghost">☆ Save portfolio</button><span id="portfolioSaveStatus"></span></div><section class="portfolio-dashboard"><div class="section-tag">PORTFOLIO DASHBOARD</div><div class="portfolio-dashboard-grid"><div class="portfolio-dashboard-chart"><canvas id="allocationChart" width="520" height="360"></canvas><p>Suggested allocation by asset</p></div><div id="portfolioDashboardMetrics" class="portfolio-dashboard-metrics"></div></div><div class="portfolio-dashboard-lower"><div><h3>Theme exposure</h3><div id="portfolioThemes" class="portfolio-themes"></div></div><div><h3>Portfolio health checks</h3><div id="portfolioWarnings" class="portfolio-warnings"></div></div></div></section><p class="portfolio-warning">Illustrative research scenario only. This does not consider your finances, objectives, experience or capacity for loss and is not a personal recommendation.</p></section>
+</section>
+
+<section id="method" class="view">
+  <div class="page-head"><div class="kicker">NO BLACK BOX</div><h1>How the maths works.</h1><p>The point is to make the calculation inspectable, not magical.</p></div>
+  <div class="method-grid">
+    <article class="glass"><b>01</b><h3>Schedule contributions</h3><p>Generate daily, weekly or monthly cash contributions from the user's selected dates.</p></article>
+    <article class="glass"><b>02</b><h3>Resolve trading days</h3><p>If a contribution lands on a weekend or market holiday, cash is queued and invested on the next available trading day.</p></article>
+    <article class="glass"><b>03</b><h3>Use adjusted prices</h3><p>Fractional shares are purchased using adjusted daily prices so historical stock splits don't distort the result.</p></article>
+    <article class="glass"><b>04</b><h3>Track every purchase</h3><p>The engine accumulates fractional shares and cumulative cash invested for the entire period.</p></article>
+    <article class="glass"><b>05</b><h3>Value the portfolio</h3><p>At each trading date, all accumulated shares are valued at that day's adjusted close to create the chart.</p></article>
+    <article class="glass"><b>06</b><h3>Separate facts from AI</h3><p>Market maths and similarity ranking stay deterministic. AI explains sourced facts; it does not fabricate the score.</p></article>
+  </div>
+</section>
+
+<section id="settings" class="view">
+  <div class="page-head"><div class="kicker">YOUR ACCOUNT</div><h1>Account settings.</h1><p>Manage your StockScope access and saved research.</p></div>
+  <div class="settings-grid">
+    <section class="glass settings-card"><span>Email</span><strong id="settingsEmail">—</strong><small>Used for authentication and account recovery.</small></section>
+    <section class="glass settings-card"><span>Current plan</span><strong id="settingsPlan">FREE</strong><small>Free accounts receive 5 calculations and 3 similarity searches per day.</small></section>
+    <section class="glass settings-card settings-wide"><span>Cloud research</span><strong>Enabled</strong><small>Saved calculations are protected by row-level security and linked to your account.</small></section>
+  </div>
+  <div class="settings-actions"><button id="exportAccount" class="ghost">Export my data</button><button class="ghost" disabled>Upgrade to Pro · coming later</button><button id="deleteAccount" class="danger-button">Delete account</button><button id="settingsSignOut" class="danger-button">Sign out</button></div><p id="settingsMessage" class="form-message"></p>
+</section>
+
+<section id="terms" class="view legal-page"><div class="page-head"><div class="kicker">LEGAL</div><h1>Terms of service.</h1><p>Draft dated 15 August 2026.</p></div><div class="legal-warning">Draft for legal review. Complete the operator identity and contact details before public launch.</div><article class="glass legal-copy"><h2>1. About StockScope</h2><p>StockScope is operated by <mark>[insert legal name and business address]</mark>. Contact: <mark>[insert legal contact email]</mark>.</p><h2>2. Research tool—not investment advice</h2><p>StockScope provides historical calculations, factual market information, deterministic similarity measures and hypothetical scenarios for general research. It does not assess your personal circumstances, objectives, financial position, knowledge, experience or risk tolerance. Nothing on the service is a personal recommendation, invitation to trade, guarantee or promise of future performance.</p><h2>3. Your responsibility</h2><p>You are responsible for independently checking information and deciding whether to seek advice from an FCA-authorised professional. Investments and cryptoassets can fall substantially in value, may be illiquid, and can result in the loss of all capital.</p><h2>4. Data and calculations</h2><p>Market and company data comes from third parties and may be delayed, incomplete or inaccurate. Methodologies, coverage and assumptions are disclosed where practical. Past performance and similarity do not predict future returns.</p><h2>5. Accounts and acceptable use</h2><p>You must provide accurate account information, protect your credentials, and not misuse, scrape, reverse engineer or disrupt the service. You must be at least 18.</p><h2>6. Third parties and referrals</h2><p>Third-party links are governed by their own terms. Any future affiliate commission or sponsored placement will be clearly disclosed and will not determine research rankings.</p><h2>7. Availability and liability</h2><p>The service may change or be withdrawn. Nothing excludes liability that cannot lawfully be excluded. Subject to applicable law, StockScope is not responsible for investment decisions, market losses, third-party data errors or indirect losses arising from reliance on the service.</p><h2>8. Governing law</h2><p>These terms are governed by the laws of England and Wales, subject to mandatory consumer protections.</p></article></section>
+
+<section id="privacy" class="view legal-page"><div class="page-head"><div class="kicker">YOUR DATA</div><h1>Privacy policy.</h1><p>Draft UK GDPR notice dated 15 August 2026.</p></div><div class="legal-warning">Complete the controller and contact details and obtain legal review before public launch.</div><article class="glass legal-copy"><h2>Controller</h2><p><mark>[insert legal name, address and privacy email]</mark> is the controller for personal data handled by StockScope.</p><h2>Data collected</h2><p>We process account email and identifiers, authentication metadata, saved research, usage events, technical logs, support communications and browser storage required to operate the service. We do not require brokerage credentials or payment details in the current version.</p><h2>Purposes and lawful bases</h2><p>We use account and saved-research data to perform our contract with you; security, service improvement and abuse prevention where necessary for legitimate interests; and records where required by law. Optional marketing requires consent.</p><h2>Processors and transfers</h2><p>Supabase provides authentication and database infrastructure. Market-data providers process technical requests. Providers may process data outside the UK; appropriate contractual or recognised transfer safeguards must be confirmed before launch.</p><h2>Retention</h2><p>Account data is retained while your account remains active and then deleted or anonymised under a documented retention schedule. Security and legal records may be retained longer where necessary. <mark>[insert final retention periods]</mark>.</p><h2>Your rights</h2><p>You may request access, correction, deletion, restriction, portability or objection, and withdraw consent where applicable. You may complain to the UK Information Commissioner’s Office.</p><h2>Cookies and local storage</h2><p>StockScope currently uses essential browser storage for sessions, guest usage limits and local saves. Non-essential analytics or advertising storage must not be enabled without an appropriate consent mechanism.</p></article></section>
+
+<section id="gdpr" class="view legal-page"><div class="page-head"><div class="kicker">DATA RIGHTS</div><h1>GDPR controls.</h1><p>How to exercise your UK data-protection rights.</p></div><article class="glass legal-copy"><h2>Submit a request</h2><p>Contact <mark>[insert privacy email]</mark> to request access, correction, deletion, restriction, portability or objection. Identity verification may be required before disclosing or deleting account information.</p><h2>Data export and account deletion</h2><p>Signed-in users can export their account profile and saved research or permanently delete their account from Account settings. Deletion removes the authentication account and cascades to associated profiles, saved research and usage records.</p><h2>Response times</h2><p>Valid requests will normally be answered within one month, subject to lawful extensions for complex or numerous requests.</p><h2>Complaints</h2><p>You can complain to the Information Commissioner’s Office at <a href="https://ico.org.uk/make-a-complaint/" target="_blank" rel="noopener">ico.org.uk</a>.</p></article></section>
+</main>
+<div id="authModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="authTitle"><div class="modal-card"><button id="closeAuth" class="modal-close" aria-label="Close">×</button><div class="section-tag">YOUR STOCKSCOPE</div><h2 id="authTitle">Sign in</h2><p>Save research and sync usage across devices.</p><label>Email<input id="authEmail" type="email" autocomplete="email"/></label><label>Password<input id="authPassword" type="password" minlength="8"/></label><button id="signIn" class="cta"><span>Sign in</span><b>→</b></button><button id="signUp" class="ghost auth-secondary">Create account</button><p id="authMessage" class="form-message"></p></div></div>
+
+<footer><div class="logo foot-logo"><img class="logo-orb" src="/logo-mark.svg" alt=""/>StockScope</div><div class="footer-links"><button data-legal-view="terms">Terms</button><button data-legal-view="privacy">Privacy</button><button data-legal-view="gdpr">GDPR</button></div><p>Research tool. Capital at risk.</p><p>V2 prototype · 2026</p></footer>
+<script type="module" src="/app.js"></script>
+</body>
+</html>
