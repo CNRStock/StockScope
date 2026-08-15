@@ -68,7 +68,7 @@ async function supabaseAdmin(pathname,{method="GET",body}={}){
   const text=await response.text();let data=null;try{data=text?JSON.parse(text):null}catch{data=text}
   if(!response.ok)throw new Error(data?.message||`Database returned ${response.status}.`);return data;
 }
-async function billingProfile(userId){const rows=await supabaseAdmin(`profiles?select=id,email,plan,stripe_customer_id,subscription_status&id=eq.${encodeURIComponent(userId)}`);return rows?.[0]||null}
+async function billingProfile(userId){const rows=await supabaseAdmin(`profiles?select=id,email,plan,stripe_customer_id,stripe_subscription_id,subscription_status,current_period_end,cancel_at_period_end,cancel_at&id=eq.${encodeURIComponent(userId)}`);return rows?.[0]||null}
 async function updateSubscription(subscription,userIdHint){
   const customerId=typeof subscription.customer==="string"?subscription.customer:subscription.customer?.id;
   let userId=userIdHint||subscription.metadata?.user_id;
@@ -88,6 +88,10 @@ async function createCheckout(req,res){
 async function createPortal(req,res){
   if(!billingEnabled)return json(res,503,{error:"Pro billing is not enabled yet."});
   try{const user=await authenticatedUser(req),profile=await billingProfile(user.id);if(!profile?.stripe_customer_id)return json(res,404,{error:"No billing account is linked to this user yet."});const portal=await stripe.billingPortal.sessions.create({customer:profile.stripe_customer_id,return_url:`${appUrl()}/#settings`});return json(res,200,{url:portal.url})}catch(error){console.error("Stripe portal failed:",error.message);return json(res,400,{error:error.message})}
+}
+async function refreshBillingStatus(req,res){
+  if(!billingEnabled)return json(res,503,{error:"Pro billing is not enabled yet."});
+  try{const user=await authenticatedUser(req),profile=await billingProfile(user.id);if(!profile?.stripe_subscription_id)return json(res,200,{profile});const subscription=await stripe.subscriptions.retrieve(profile.stripe_subscription_id),rows=await updateSubscription(subscription,user.id);return json(res,200,{profile:rows?.[0]||profile})}catch(error){console.error("Stripe status refresh failed:",error.message);return json(res,400,{error:error.message})}
 }
 async function stripeWebhook(req,res){
   if(!billingEnabled)return json(res,503,{error:"Billing is disabled."});
@@ -350,7 +354,7 @@ async function portfolioEvidence(reqUrl,res){
 const server = http.createServer(async (req,res) => {
   if(String(req.url||"").length>2_048)return json(res,414,{error:"Request URL is too long."});
   const reqUrl = new URL(req.url, `http://${req.headers.host || "localhost"}`);
-  const postPaths=new Set(["/api/billing/checkout","/api/billing/portal"]);
+  const postPaths=new Set(["/api/billing/checkout","/api/billing/portal","/api/billing/status"]);
   if(reqUrl.pathname==="/api/health")return json(res,200,{status:"ok",version:"2.0.0",uptimeSeconds:Math.round(process.uptime()),marketDataConfigured:Boolean(process.env.EODHD_API_KEY),databaseConfigured:Boolean(process.env.SUPABASE_URL&&process.env.SUPABASE_PUBLISHABLE_KEY)});
   if(reqUrl.pathname==="/api/stripe/webhook"){if(req.method!=="POST")return json(res,405,{error:"Method not allowed."});return stripeWebhook(req,res)}
   if(!postPaths.has(reqUrl.pathname)&&!betaAuthorized(req)){res.writeHead(401,{...baseHeaders,"www-authenticate":'Basic realm="StockScope private beta", charset="UTF-8"',"content-type":"text/plain; charset=utf-8","cache-control":"no-store"});return res.end("StockScope private beta access required.")}
@@ -366,6 +370,7 @@ const server = http.createServer(async (req,res) => {
   if (reqUrl.pathname === "/api/config") return json(res,200,{supabaseUrl:process.env.SUPABASE_URL||null,supabaseKey:process.env.SUPABASE_PUBLISHABLE_KEY||null,unlimitedBeta:process.env.PRIVATE_BETA==="true"&&process.env.BETA_UNLIMITED==="true",billingEnabled});
   if (reqUrl.pathname === "/api/billing/checkout") return createCheckout(req,res);
   if (reqUrl.pathname === "/api/billing/portal") return createPortal(req,res);
+  if (reqUrl.pathname === "/api/billing/status") return refreshBillingStatus(req,res);
   if (reqUrl.pathname === "/api/historical") return historical(reqUrl,res);
   if (reqUrl.pathname === "/api/news") return news(reqUrl,res);
   if (reqUrl.pathname === "/api/quotes") return quotes(reqUrl,res);
