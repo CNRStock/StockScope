@@ -55,7 +55,7 @@ async function readBody(req,maxBytes=1_000_000){
   for await(const chunk of req){size+=chunk.length;if(size>maxBytes)throw new Error("Request body is too large.");chunks.push(chunk)}
   return Buffer.concat(chunks);
 }
-function bearerToken(req){const privateBetaCompatible=String(req.headers["x-stockscope-session"]||"");if(privateBetaCompatible)return privateBetaCompatible;const value=String(req.headers.authorization||"");return value.startsWith("Bearer ")?value.slice(7):null}
+function bearerToken(req){const value=String(req.headers.authorization||"");return value.startsWith("Bearer ")?value.slice(7):null}
 async function authenticatedUser(req){
   const token=bearerToken(req);if(!token)throw new Error("Sign in to manage billing.");
   const response=await providerFetch(`${process.env.SUPABASE_URL}/auth/v1/user`,{headers:{apikey:process.env.SUPABASE_PUBLISHABLE_KEY,Authorization:`Bearer ${token}`}});
@@ -350,11 +350,11 @@ async function portfolioEvidence(reqUrl,res){
 const server = http.createServer(async (req,res) => {
   if(String(req.url||"").length>2_048)return json(res,414,{error:"Request URL is too long."});
   const reqUrl = new URL(req.url, `http://${req.headers.host || "localhost"}`);
+  const postPaths=new Set(["/api/billing/checkout","/api/billing/portal"]);
   if(reqUrl.pathname==="/api/health")return json(res,200,{status:"ok",version:"2.0.0",uptimeSeconds:Math.round(process.uptime()),marketDataConfigured:Boolean(process.env.EODHD_API_KEY),databaseConfigured:Boolean(process.env.SUPABASE_URL&&process.env.SUPABASE_PUBLISHABLE_KEY)});
   if(reqUrl.pathname==="/api/stripe/webhook"){if(req.method!=="POST")return json(res,405,{error:"Method not allowed."});return stripeWebhook(req,res)}
-  if(!betaAuthorized(req)){res.writeHead(401,{...baseHeaders,"www-authenticate":'Basic realm="StockScope private beta", charset="UTF-8"',"content-type":"text/plain; charset=utf-8","cache-control":"no-store"});return res.end("StockScope private beta access required.")}
+  if(!postPaths.has(reqUrl.pathname)&&!betaAuthorized(req)){res.writeHead(401,{...baseHeaders,"www-authenticate":'Basic realm="StockScope private beta", charset="UTF-8"',"content-type":"text/plain; charset=utf-8","cache-control":"no-store"});return res.end("StockScope private beta access required.")}
   const isApi=reqUrl.pathname.startsWith("/api/");
-  const postPaths=new Set(["/api/billing/checkout","/api/billing/portal"]);
   if(!["GET","HEAD"].includes(req.method||"GET")&&!(req.method==="POST"&&postPaths.has(reqUrl.pathname)))return json(res,405,{error:"Method not allowed."});
   if(isApi){
     const forwarded=process.env.TRUST_PROXY==="true"?String(req.headers["x-forwarded-for"]||"").split(",")[0].trim():"";
@@ -385,7 +385,7 @@ const server = http.createServer(async (req,res) => {
       res.writeHead(404, {"content-type":"text/plain; charset=utf-8"});
       return res.end("Not found");
     }
-    const extension=path.extname(file),cacheControl=extension===".html"?"no-cache":"public, max-age=3600";
+    const extension=path.extname(file),cacheControl=[".html",".js",".css"].includes(extension)?"no-cache":"public, max-age=3600";
     res.writeHead(200, {...baseHeaders,"content-type": mime[extension] || "application/octet-stream","cache-control":cacheControl});
     if(req.method==="HEAD")return res.end();
     fs.createReadStream(file).pipe(res);
