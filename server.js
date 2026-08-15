@@ -55,7 +55,7 @@ async function readBody(req,maxBytes=1_000_000){
   for await(const chunk of req){size+=chunk.length;if(size>maxBytes)throw new Error("Request body is too large.");chunks.push(chunk)}
   return Buffer.concat(chunks);
 }
-function bearerToken(req){const value=String(req.headers.authorization||"");return value.startsWith("Bearer ")?value.slice(7):null}
+function bearerToken(req){const privateBetaCompatible=String(req.headers["x-stockscope-session"]||"");if(privateBetaCompatible)return privateBetaCompatible;const value=String(req.headers.authorization||"");return value.startsWith("Bearer ")?value.slice(7):null}
 async function authenticatedUser(req){
   const token=bearerToken(req);if(!token)throw new Error("Sign in to manage billing.");
   const response=await providerFetch(`${process.env.SUPABASE_URL}/auth/v1/user`,{headers:{apikey:process.env.SUPABASE_PUBLISHABLE_KEY,Authorization:`Bearer ${token}`}});
