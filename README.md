@@ -94,6 +94,8 @@ Billing is safely dormant while `BILLING_ENABLED=false`. To test Pro subscriptio
 
 Checkout and the customer portal are created server-side. Supabase plan access changes only after a webhook has passed Stripe signature verification.
 
+Subscription access follows Stripe status: `active`, `trialing`, and `past_due` retain Pro while payment retries run; `unpaid`, `canceled`, `incomplete`, `incomplete_expired`, and `paused` use Free access. A subscription scheduled to cancel keeps Pro until its paid period ends.
+
 ## Structure
 
 ```text

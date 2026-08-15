@@ -11,6 +11,7 @@ import { compareProfiles } from "./similarity.js";
 import { scoreCrypto } from "./crypto-model.js";
 import { evidenceFromPrices,allocateEvidence } from "./portfolio-model.js";
 import { securityHeaders,createRateLimiter } from "./security.js";
+import { subscriptionRecord } from "./billing-model.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PUBLIC = path.join(__dirname, "public");
@@ -68,13 +69,12 @@ async function supabaseAdmin(pathname,{method="GET",body}={}){
   if(!response.ok)throw new Error(data?.message||`Database returned ${response.status}.`);return data;
 }
 async function billingProfile(userId){const rows=await supabaseAdmin(`profiles?select=id,email,plan,stripe_customer_id,subscription_status&id=eq.${encodeURIComponent(userId)}`);return rows?.[0]||null}
-function subscriptionPlan(status){return ["active","trialing"].includes(status)?"pro":"free"}
 async function updateSubscription(subscription,userIdHint){
   const customerId=typeof subscription.customer==="string"?subscription.customer:subscription.customer?.id;
   let userId=userIdHint||subscription.metadata?.user_id;
   if(!userId&&customerId){const rows=await supabaseAdmin(`profiles?select=id&stripe_customer_id=eq.${encodeURIComponent(customerId)}`);userId=rows?.[0]?.id}
   if(!userId)throw new Error("No StockScope user is linked to this Stripe subscription.");
-  return supabaseAdmin(`profiles?id=eq.${encodeURIComponent(userId)}`,{method:"PATCH",body:{plan:subscriptionPlan(subscription.status),stripe_customer_id:customerId||null,stripe_subscription_id:subscription.id,subscription_status:subscription.status,current_period_end:subscription.current_period_end?new Date(subscription.current_period_end*1000).toISOString():null}});
+  return supabaseAdmin(`profiles?id=eq.${encodeURIComponent(userId)}`,{method:"PATCH",body:subscriptionRecord(subscription)});
 }
 function appUrl(){return String(process.env.APP_URL||`http://localhost:${PORT}`).replace(/\/$/,"")}
 async function createCheckout(req,res){

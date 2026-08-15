@@ -18,6 +18,6 @@ export async function consumeUsage(type){
 }
 export async function saveResearch(kind,title,payload){if(!session)throw new Error("Sign in to save research to your account.");return request("/rest/v1/saved_research",{method:"POST",body:{user_id:session.user.id,kind,title,payload},authenticated:true,headers:{Prefer:"return=minimal"}})}
 export async function loadResearch(){if(!session)return[];return request("/rest/v1/saved_research?select=*&order=created_at.desc&limit=30",{authenticated:true})}
-export async function loadProfile(){if(!session)return null;const rows=await request(`/rest/v1/profiles?select=email,plan,subscription_status,current_period_end,created_at&id=eq.${session.user.id}`,{authenticated:true});return rows[0]||null}
+export async function loadProfile(){if(!session)return null;const rows=await request(`/rest/v1/profiles?select=email,plan,subscription_status,current_period_end,cancel_at_period_end,cancel_at,created_at&id=eq.${session.user.id}`,{authenticated:true});return rows[0]||null}
 export async function exportAccountData(){if(!session)throw new Error("Sign in to export account data.");const [profile,research]=await Promise.all([loadProfile(),loadResearch()]);return{exportedAt:new Date().toISOString(),account:{id:session.user.id,email:session.user.email,profile},savedResearch:research}}
 export async function deleteAccount(){if(!session)throw new Error("Sign in to delete your account.");await request("/rest/v1/rpc/delete_own_account",{method:"POST",body:{},authenticated:true});signOut()}

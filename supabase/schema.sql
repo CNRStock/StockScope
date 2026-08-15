@@ -3,6 +3,8 @@ alter table public.profiles add column if not exists stripe_customer_id text uni
 alter table public.profiles add column if not exists stripe_subscription_id text;
 alter table public.profiles add column if not exists subscription_status text;
 alter table public.profiles add column if not exists current_period_end timestamptz;
+alter table public.profiles add column if not exists cancel_at_period_end boolean not null default false;
+alter table public.profiles add column if not exists cancel_at timestamptz;
 create table if not exists public.saved_research(id uuid primary key default gen_random_uuid(),user_id uuid not null references auth.users(id) on delete cascade,kind text not null,title text not null,payload jsonb not null,created_at timestamptz not null default now());
 create table if not exists public.usage_events(id bigint generated always as identity primary key,user_id uuid not null references auth.users(id) on delete cascade,event_type text not null,created_at timestamptz not null default now());
 alter table public.profiles enable row level security;alter table public.saved_research enable row level security;alter table public.usage_events enable row level security;
