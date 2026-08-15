@@ -5,6 +5,7 @@ export const currentSession=()=>session;export const signUp=(email,password)=>re
 export async function signIn(email,password){session=await request("/auth/v1/token?grant_type=password",{method:"POST",body:{email,password}});localStorage.setItem("stockscope-session",JSON.stringify(session));return session}export function signOut(){session=null;localStorage.removeItem("stockscope-session")}
 export async function consumeUsage(type){
   if(["localhost","127.0.0.1","::1"].includes(location.hostname))return{allowed:true,development:true,remaining:null};
+  const c=await getConfig();if(c.unlimitedBeta)return{allowed:true,beta:true,remaining:null};
   if(!session){
     const day=new Date().toISOString().slice(0,10),key=`stockscope-guest-usage-${day}`,usage=JSON.parse(localStorage.getItem(key)||"{}");
     const limit=type==="calculation"?3:1,count=Number(usage[type]||0);

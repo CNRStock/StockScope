@@ -309,7 +309,7 @@ const server = http.createServer(async (req,res) => {
   }
 
   if (reqUrl.pathname === "/api/status") return apiStatus(res);
-  if (reqUrl.pathname === "/api/config") return json(res,200,{supabaseUrl:process.env.SUPABASE_URL||null,supabaseKey:process.env.SUPABASE_PUBLISHABLE_KEY||null});
+  if (reqUrl.pathname === "/api/config") return json(res,200,{supabaseUrl:process.env.SUPABASE_URL||null,supabaseKey:process.env.SUPABASE_PUBLISHABLE_KEY||null,unlimitedBeta:process.env.PRIVATE_BETA==="true"&&process.env.BETA_UNLIMITED==="true"});
   if (reqUrl.pathname === "/api/historical") return historical(reqUrl,res);
   if (reqUrl.pathname === "/api/news") return news(reqUrl,res);
   if (reqUrl.pathname === "/api/quotes") return quotes(reqUrl,res);

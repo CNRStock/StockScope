@@ -10,6 +10,8 @@ services:
         value: production
       - key: PRIVATE_BETA
         value: "true"
+      - key: BETA_UNLIMITED
+        value: "true"
       - key: TRUST_PROXY
         value: "true"
       - key: API_RATE_LIMIT
