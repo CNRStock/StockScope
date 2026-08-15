@@ -12,6 +12,10 @@ services:
         value: "true"
       - key: BETA_UNLIMITED
         value: "true"
+      - key: BILLING_ENABLED
+        value: "false"
+      - key: APP_URL
+        value: https://stockscope-private-beta.onrender.com
       - key: TRUST_PROXY
         value: "true"
       - key: API_RATE_LIMIT
@@ -25,6 +29,14 @@ services:
       - key: SUPABASE_URL
         sync: false
       - key: SUPABASE_PUBLISHABLE_KEY
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      - key: STRIPE_SECRET_KEY
+        sync: false
+      - key: STRIPE_WEBHOOK_SECRET
+        sync: false
+      - key: STRIPE_PRO_PRICE_ID
         sync: false
       - key: BETA_USERNAME
         sync: false

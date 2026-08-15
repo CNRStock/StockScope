@@ -48,7 +48,7 @@ npm start
 http://localhost:3000
 ```
 
-There are no npm package dependencies.
+The project uses Stripe's official server library for subscription billing.
 
 ## DCA methodology
 
@@ -81,6 +81,18 @@ The repository-root `render.yaml` defines the Node web service, production healt
 5. Add the Render URL to Supabase Authentication → URL Configuration as the Site URL and an allowed redirect URL.
 
 `PRIVATE_BETA=true` enables HTTP Basic authentication for every route except the health check. Render terminates HTTPS before forwarding requests. Disable private-beta authentication only when the product is ready for public access.
+
+## Stripe Pro subscriptions
+
+Billing is safely dormant while `BILLING_ENABLED=false`. To test Pro subscriptions:
+
+1. Re-run `supabase/schema.sql` in the Supabase SQL editor to add the Stripe profile columns.
+2. In Stripe test mode, create a StockScope Pro product with a recurring GBP price.
+3. Add `SUPABASE_SERVICE_ROLE_KEY`, `STRIPE_SECRET_KEY`, and the recurring `STRIPE_PRO_PRICE_ID` to the server environment. Never expose these in browser code.
+4. Create a Stripe webhook endpoint at `https://stockscope-private-beta.onrender.com/api/stripe/webhook` for `checkout.session.completed`, `customer.subscription.updated`, `customer.subscription.deleted`, and `invoice.payment_failed`; then add its signing secret as `STRIPE_WEBHOOK_SECRET`.
+5. Set `APP_URL` to the deployed HTTPS origin and change `BILLING_ENABLED` to `true`.
+
+Checkout and the customer portal are created server-side. Supabase plan access changes only after a webhook has passed Stripe signature verification.
 
 ## Structure
 

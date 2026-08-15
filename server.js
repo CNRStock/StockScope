@@ -4,6 +4,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { URL } from "node:url";
 import { timingSafeEqual } from "node:crypto";
+import Stripe from "stripe";
 import { summarizeFundamentals } from "./fundamentals.js";
 import { summarizeSecCompanyFacts } from "./sec-fundamentals.js";
 import { compareProfiles } from "./similarity.js";
@@ -28,6 +29,8 @@ if (fs.existsSync(envPath)) {
   }
 }
 const PORT = Number(process.env.PORT || 3000);
+const billingEnabled=process.env.BILLING_ENABLED==="true";
+const stripe=billingEnabled?new Stripe(process.env.STRIPE_SECRET_KEY||""):null;
 
 const mime = {
   ".html":"text/html; charset=utf-8", ".css":"text/css; charset=utf-8",
@@ -40,11 +43,60 @@ const expensivePaths=new Set(["/api/similar","/api/crypto-similar","/api/portfol
 const providerFetch=(url,options={})=>fetch(url,{...options,signal:options.signal||AbortSignal.timeout(15_000)});
 function secureEqual(left,right){const a=Buffer.from(String(left)),b=Buffer.from(String(right));return a.length===b.length&&timingSafeEqual(a,b)}
 function betaAuthorized(req){if(process.env.PRIVATE_BETA!=="true")return true;const header=String(req.headers.authorization||"");if(!header.startsWith("Basic "))return false;try{const decoded=Buffer.from(header.slice(6),"base64").toString("utf8"),separator=decoded.indexOf(":");if(separator<0)return false;return secureEqual(decoded.slice(0,separator),process.env.BETA_USERNAME||"")&&secureEqual(decoded.slice(separator+1),process.env.BETA_PASSWORD||"")}catch{return false}}
-function validateProductionEnvironment(){if(!production)return;const required=["EODHD_API_KEY","SEC_USER_AGENT","SUPABASE_URL","SUPABASE_PUBLISHABLE_KEY"],missing=required.filter(key=>!process.env[key]);if(process.env.PRIVATE_BETA==="true")for(const key of ["BETA_USERNAME","BETA_PASSWORD"])if(!process.env[key])missing.push(key);if(missing.length)throw new Error(`Missing production environment variables: ${missing.join(", ")}`)}
+function validateProductionEnvironment(){if(!production)return;const required=["EODHD_API_KEY","SEC_USER_AGENT","SUPABASE_URL","SUPABASE_PUBLISHABLE_KEY"],missing=required.filter(key=>!process.env[key]);if(process.env.PRIVATE_BETA==="true")for(const key of ["BETA_USERNAME","BETA_PASSWORD"])if(!process.env[key])missing.push(key);if(billingEnabled)for(const key of ["APP_URL","STRIPE_SECRET_KEY","STRIPE_WEBHOOK_SECRET","STRIPE_PRO_PRICE_ID","SUPABASE_SERVICE_ROLE_KEY"])if(!process.env[key])missing.push(key);if(missing.length)throw new Error(`Missing production environment variables: ${missing.join(", ")}`)}
 
 function json(res, status, body) {
   res.writeHead(status, {...baseHeaders,"content-type":"application/json; charset=utf-8", "cache-control":"no-store"});
   res.end(JSON.stringify(body));
+}
+
+async function readBody(req,maxBytes=1_000_000){
+  const chunks=[];let size=0;
+  for await(const chunk of req){size+=chunk.length;if(size>maxBytes)throw new Error("Request body is too large.");chunks.push(chunk)}
+  return Buffer.concat(chunks);
+}
+function bearerToken(req){const value=String(req.headers.authorization||"");return value.startsWith("Bearer ")?value.slice(7):null}
+async function authenticatedUser(req){
+  const token=bearerToken(req);if(!token)throw new Error("Sign in to manage billing.");
+  const response=await providerFetch(`${process.env.SUPABASE_URL}/auth/v1/user`,{headers:{apikey:process.env.SUPABASE_PUBLISHABLE_KEY,Authorization:`Bearer ${token}`}});
+  if(!response.ok)throw new Error("Your session has expired. Please sign in again.");
+  return response.json();
+}
+async function supabaseAdmin(pathname,{method="GET",body}={}){
+  const response=await providerFetch(`${process.env.SUPABASE_URL}/rest/v1/${pathname}`,{method,headers:{apikey:process.env.SUPABASE_SERVICE_ROLE_KEY,Authorization:`Bearer ${process.env.SUPABASE_SERVICE_ROLE_KEY}`,"content-type":"application/json",Prefer:"return=representation"},body:body===undefined?undefined:JSON.stringify(body)});
+  const text=await response.text();let data=null;try{data=text?JSON.parse(text):null}catch{data=text}
+  if(!response.ok)throw new Error(data?.message||`Database returned ${response.status}.`);return data;
+}
+async function billingProfile(userId){const rows=await supabaseAdmin(`profiles?select=id,email,plan,stripe_customer_id,subscription_status&id=eq.${encodeURIComponent(userId)}`);return rows?.[0]||null}
+function subscriptionPlan(status){return ["active","trialing"].includes(status)?"pro":"free"}
+async function updateSubscription(subscription,userIdHint){
+  const customerId=typeof subscription.customer==="string"?subscription.customer:subscription.customer?.id;
+  let userId=userIdHint||subscription.metadata?.user_id;
+  if(!userId&&customerId){const rows=await supabaseAdmin(`profiles?select=id&stripe_customer_id=eq.${encodeURIComponent(customerId)}`);userId=rows?.[0]?.id}
+  if(!userId)throw new Error("No StockScope user is linked to this Stripe subscription.");
+  return supabaseAdmin(`profiles?id=eq.${encodeURIComponent(userId)}`,{method:"PATCH",body:{plan:subscriptionPlan(subscription.status),stripe_customer_id:customerId||null,stripe_subscription_id:subscription.id,subscription_status:subscription.status,current_period_end:subscription.current_period_end?new Date(subscription.current_period_end*1000).toISOString():null}});
+}
+function appUrl(){return String(process.env.APP_URL||`http://localhost:${PORT}`).replace(/\/$/,"")}
+async function createCheckout(req,res){
+  if(!billingEnabled)return json(res,503,{error:"Pro billing is not enabled yet."});
+  try{const user=await authenticatedUser(req),profile=await billingProfile(user.id);if(profile?.plan==="pro")return json(res,409,{error:"You already have Pro. Use Manage billing instead."});
+    const params={mode:"subscription",line_items:[{price:process.env.STRIPE_PRO_PRICE_ID,quantity:1}],success_url:`${appUrl()}/?checkout=success`,cancel_url:`${appUrl()}/?checkout=cancelled`,client_reference_id:user.id,allow_promotion_codes:true,metadata:{user_id:user.id},subscription_data:{metadata:{user_id:user.id}}};
+    if(profile?.stripe_customer_id)params.customer=profile.stripe_customer_id;else params.customer_email=user.email;
+    const checkout=await stripe.checkout.sessions.create(params);return json(res,200,{url:checkout.url});
+  }catch(error){console.error("Stripe Checkout failed:",error.message);return json(res,400,{error:error.message})}
+}
+async function createPortal(req,res){
+  if(!billingEnabled)return json(res,503,{error:"Pro billing is not enabled yet."});
+  try{const user=await authenticatedUser(req),profile=await billingProfile(user.id);if(!profile?.stripe_customer_id)return json(res,404,{error:"No billing account is linked to this user yet."});const portal=await stripe.billingPortal.sessions.create({customer:profile.stripe_customer_id,return_url:`${appUrl()}/#settings`});return json(res,200,{url:portal.url})}catch(error){console.error("Stripe portal failed:",error.message);return json(res,400,{error:error.message})}
+}
+async function stripeWebhook(req,res){
+  if(!billingEnabled)return json(res,503,{error:"Billing is disabled."});
+  try{const raw=await readBody(req),event=stripe.webhooks.constructEvent(raw,String(req.headers["stripe-signature"]||""),process.env.STRIPE_WEBHOOK_SECRET);
+    if(event.type==="checkout.session.completed"){const session=event.data.object;if(session.subscription){const subscription=await stripe.subscriptions.retrieve(session.subscription);await updateSubscription(subscription,session.metadata?.user_id||session.client_reference_id)}}
+    else if(event.type==="customer.subscription.updated"||event.type==="customer.subscription.deleted")await updateSubscription(event.data.object);
+    else if(event.type==="invoice.payment_failed"){const invoice=event.data.object,customerId=typeof invoice.customer==="string"?invoice.customer:invoice.customer?.id;if(customerId)await supabaseAdmin(`profiles?stripe_customer_id=eq.${encodeURIComponent(customerId)}`,{method:"PATCH",body:{subscription_status:"payment_failed"}})}
+    return json(res,200,{received:true});
+  }catch(error){console.error("Stripe webhook rejected:",error.message);return json(res,400,{error:"Invalid webhook."})}
 }
 
 function safeTicker(raw) {
@@ -299,9 +351,11 @@ const server = http.createServer(async (req,res) => {
   if(String(req.url||"").length>2_048)return json(res,414,{error:"Request URL is too long."});
   const reqUrl = new URL(req.url, `http://${req.headers.host || "localhost"}`);
   if(reqUrl.pathname==="/api/health")return json(res,200,{status:"ok",version:"2.0.0",uptimeSeconds:Math.round(process.uptime()),marketDataConfigured:Boolean(process.env.EODHD_API_KEY),databaseConfigured:Boolean(process.env.SUPABASE_URL&&process.env.SUPABASE_PUBLISHABLE_KEY)});
+  if(reqUrl.pathname==="/api/stripe/webhook"){if(req.method!=="POST")return json(res,405,{error:"Method not allowed."});return stripeWebhook(req,res)}
   if(!betaAuthorized(req)){res.writeHead(401,{...baseHeaders,"www-authenticate":'Basic realm="StockScope private beta", charset="UTF-8"',"content-type":"text/plain; charset=utf-8","cache-control":"no-store"});return res.end("StockScope private beta access required.")}
   const isApi=reqUrl.pathname.startsWith("/api/");
-  if(!["GET","HEAD"].includes(req.method||"GET"))return json(res,405,{error:"Method not allowed."});
+  const postPaths=new Set(["/api/billing/checkout","/api/billing/portal"]);
+  if(!["GET","HEAD"].includes(req.method||"GET")&&!(req.method==="POST"&&postPaths.has(reqUrl.pathname)))return json(res,405,{error:"Method not allowed."});
   if(isApi){
     const forwarded=process.env.TRUST_PROXY==="true"?String(req.headers["x-forwarded-for"]||"").split(",")[0].trim():"";
     const client=forwarded||req.socket.remoteAddress||"unknown",result=(expensivePaths.has(reqUrl.pathname)?expensiveLimit:generalLimit)(`${client}:${reqUrl.pathname}`);
@@ -309,7 +363,9 @@ const server = http.createServer(async (req,res) => {
   }
 
   if (reqUrl.pathname === "/api/status") return apiStatus(res);
-  if (reqUrl.pathname === "/api/config") return json(res,200,{supabaseUrl:process.env.SUPABASE_URL||null,supabaseKey:process.env.SUPABASE_PUBLISHABLE_KEY||null,unlimitedBeta:process.env.PRIVATE_BETA==="true"&&process.env.BETA_UNLIMITED==="true"});
+  if (reqUrl.pathname === "/api/config") return json(res,200,{supabaseUrl:process.env.SUPABASE_URL||null,supabaseKey:process.env.SUPABASE_PUBLISHABLE_KEY||null,unlimitedBeta:process.env.PRIVATE_BETA==="true"&&process.env.BETA_UNLIMITED==="true",billingEnabled});
+  if (reqUrl.pathname === "/api/billing/checkout") return createCheckout(req,res);
+  if (reqUrl.pathname === "/api/billing/portal") return createPortal(req,res);
   if (reqUrl.pathname === "/api/historical") return historical(reqUrl,res);
   if (reqUrl.pathname === "/api/news") return news(reqUrl,res);
   if (reqUrl.pathname === "/api/quotes") return quotes(reqUrl,res);

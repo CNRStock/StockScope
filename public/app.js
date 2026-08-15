@@ -1,6 +1,6 @@
 import { runDCA } from "./calculator.js";
 import { marketSymbol } from "./assets.js";
-import { currentSession,signIn,signOut,signUp,consumeUsage,saveResearch,loadResearch,loadProfile,exportAccountData,deleteAccount } from "./supabase-client.js";
+import { currentSession,signIn,signOut,signUp,consumeUsage,saveResearch,loadResearch,loadProfile,exportAccountData,deleteAccount,billingAvailable,billingAction } from "./supabase-client.js";
 
 const $ = s => document.querySelector(s);
 const $$ = s => [...document.querySelectorAll(s)];
@@ -61,13 +61,19 @@ status();
 $("#homeLogo").addEventListener("click",event=>{event.preventDefault();showView("discover")});
 function renderAccount(){const session=currentSession(),button=$("#accountButton");button.textContent=session?session.user.email:"Sign in";button.classList.toggle("signed-in",Boolean(session))}
 renderAccount();
-$("#accountButton").addEventListener("click",async()=>{if(!currentSession()){ $("#authModal").classList.remove("hidden");return }showView("settings");$("#settingsEmail").textContent=currentSession().user.email;try{const profile=await loadProfile();$("#settingsPlan").textContent=(profile?.plan||"free").toUpperCase()}catch{$("#settingsPlan").textContent="FREE"}});
+async function renderSettings(){showView("settings");$("#settingsEmail").textContent=currentSession().user.email;const upgrade=$("#upgradePro"),manage=$("#manageBilling"),message=$("#settingsMessage");try{const [profile,enabled]=await Promise.all([loadProfile(),billingAvailable()]),isPro=profile?.plan==="pro";$("#settingsPlan").textContent=(profile?.plan||"free").toUpperCase();upgrade.classList.toggle("hidden",isPro);manage.classList.toggle("hidden",!isPro);upgrade.disabled=!enabled;if(!enabled&&!isPro)message.textContent="Pro checkout is being prepared and is not open yet."}catch{$("#settingsPlan").textContent="FREE"}}
+$("#accountButton").addEventListener("click",async()=>{if(!currentSession()){ $("#authModal").classList.remove("hidden");return }await renderSettings()});
 $("#closeAuth").addEventListener("click",()=>$("#authModal").classList.add("hidden"));
 $("#signIn").addEventListener("click",async()=>{const msg=$("#authMessage");try{await signIn($("#authEmail").value,$("#authPassword").value);msg.textContent="";$("#authModal").classList.add("hidden");renderAccount();renderSaved()}catch(error){msg.textContent=error.message}});
 $("#signUp").addEventListener("click",async()=>{const msg=$("#authMessage");try{await signUp($("#authEmail").value,$("#authPassword").value);msg.textContent="Account created. Check your email to confirm it, then sign in."}catch(error){msg.textContent=error.message}});
 $("#settingsSignOut").addEventListener("click",()=>{signOut();renderAccount();renderSaved();showView("discover")});
+async function openBilling(action,button){const message=$("#settingsMessage");button.disabled=true;message.textContent="Opening secure Stripe billing…";try{const data=await billingAction(action);location.href=data.url}catch(error){message.textContent=error.message;button.disabled=false}}
+$("#upgradePro").addEventListener("click",event=>openBilling("checkout",event.currentTarget));
+$("#manageBilling").addEventListener("click",event=>openBilling("portal",event.currentTarget));
 $("#exportAccount").addEventListener("click",async()=>{const message=$("#settingsMessage");try{const data=await exportAccountData(),blob=new Blob([JSON.stringify(data,null,2)],{type:"application/json"}),url=URL.createObjectURL(blob),link=document.createElement("a");link.href=url;link.download=`stockscope-data-${new Date().toISOString().slice(0,10)}.json`;link.click();URL.revokeObjectURL(url);message.textContent="Your account-data export has downloaded."}catch(error){message.textContent=error.message}});
 $("#deleteAccount").addEventListener("click",async()=>{const message=$("#settingsMessage");if(!confirm("Permanently delete your StockScope account and all saved research? This cannot be undone."))return;try{await deleteAccount();renderAccount();renderSaved();showView("discover")}catch(error){message.textContent=`Account deletion failed: ${error.message}`}});
+
+const checkoutState=new URLSearchParams(location.search).get("checkout");if(checkoutState&&currentSession()){history.replaceState({},"",location.pathname+location.hash);renderSettings().then(()=>{$("#settingsMessage").textContent=checkoutState==="success"?"Payment received. Your Pro plan will appear as soon as Stripe confirms it.":"Checkout cancelled — no charge was made."})}
 
 $$('[data-freq]').forEach(b=>b.addEventListener("click",()=>{
   $$('[data-freq]').forEach(x=>x.classList.remove("active"));
