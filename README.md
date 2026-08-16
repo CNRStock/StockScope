@@ -21,6 +21,18 @@ AssetSeek is an AI-assisted stock and crypto research workspace. It combines his
 - Indexed price trends, volatility, liquidity, hype risk, themes and SEC fundamentals
 - Sourced news and an inspectable source ledger
 - Optional OpenAI-generated research briefs with strict structured output and a deterministic fallback
+- Free and Pro entitlements with monthly AI-research allowances
+- Pro Opportunity Radar and Candidate Tracker with delayed-price monitoring
+- Advanced portfolio/candidate alerts and an on-page weekly research digest
+- Pro CSV and print-ready PDF research exports
+
+## Plans
+
+Free includes 3 historical calculations per day, 1 similarity search per day, 3 AI comparisons per month, 2 assets per comparison, a 3-asset portfolio, 1 saved portfolio and 3 total cloud saves.
+
+Pro (£6.99/month) includes 100 AI comparisons per month, 4 assets per comparison, 12-asset portfolios, unlimited cloud saves, Opportunity Radar, Candidate Tracker, advanced alerts, the weekly research digest, and CSV/print-ready PDF exports. The AI allowance remains finite to protect the service from automated abuse and unexpected API spend.
+
+`BETA_UNLIMITED=true` grants all Pro product features to private-beta testers while retaining the shared beta login. Turn it off before testing the real Free plan.
 
 ## Market data
 
@@ -93,7 +105,7 @@ The repository-root `render.yaml` defines the Node web service, production healt
 
 Billing is safely dormant while `BILLING_ENABLED=false`. To test Pro subscriptions:
 
-1. Re-run `supabase/schema.sql` in the Supabase SQL editor to add the Stripe profile columns.
+1. Re-run `supabase/schema.sql` in the Supabase SQL editor to add the Stripe profile columns and the current calculation/similarity/AI-research usage limits. Run this again whenever plan allowances in the schema change.
 2. In Stripe test mode, create an AssetSeek Pro product with a recurring GBP price. An existing legacy product can be renamed in Stripe without changing its price ID.
 3. Add `SUPABASE_SERVICE_ROLE_KEY`, `STRIPE_SECRET_KEY`, and the recurring `STRIPE_PRO_PRICE_ID` to the server environment. Never expose these in browser code.
 4. Create a Stripe webhook endpoint at `https://stockscope-private-beta.onrender.com/api/stripe/webhook` for `checkout.session.completed`, `customer.subscription.updated`, `customer.subscription.deleted`, and `invoice.payment_failed`; then add its signing secret as `STRIPE_WEBHOOK_SECRET`.
@@ -116,5 +128,7 @@ stockscope_v2/ (legacy folder name)
     ├── index.html
     ├── styles.css
     ├── app.js
-    └── research.js
+    ├── research.js
+    ├── pro-tools.js
+    └── radar-model.js
 ```

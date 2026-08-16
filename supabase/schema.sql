@@ -12,6 +12,23 @@ drop policy if exists "read own profile" on public.profiles;drop policy if exist
 create policy "read own profile" on public.profiles for select using(auth.uid()=id);create policy "read own research" on public.saved_research for select using(auth.uid()=user_id);create policy "save own research" on public.saved_research for insert with check(auth.uid()=user_id);create policy "delete own research" on public.saved_research for delete using(auth.uid()=user_id);create policy "read own usage" on public.usage_events for select using(auth.uid()=user_id);
 create or replace function public.handle_new_user() returns trigger language plpgsql security definer set search_path=public as $$begin insert into public.profiles(id,email)values(new.id,new.email)on conflict(id)do nothing;return new;end;$$;
 drop trigger if exists on_auth_user_created on auth.users;create trigger on_auth_user_created after insert on auth.users for each row execute procedure public.handle_new_user();
-create or replace function public.consume_usage(requested_type text) returns jsonb language plpgsql security definer set search_path=public as $$declare current_plan text;used_count integer;allowed_count integer;begin if auth.uid() is null then raise exception 'Authentication required';end if;if requested_type not in('calculation','similarity')then raise exception 'Invalid usage type';end if;select plan into current_plan from public.profiles where id=auth.uid();if current_plan='pro'then return jsonb_build_object('allowed',true,'plan','pro','remaining',null);end if;allowed_count:=case when requested_type='calculation'then 5 else 3 end;select count(*)into used_count from public.usage_events where user_id=auth.uid()and event_type=requested_type and created_at>=date_trunc('day',now());if used_count>=allowed_count then return jsonb_build_object('allowed',false,'plan','free','remaining',0);end if;insert into public.usage_events(user_id,event_type)values(auth.uid(),requested_type);return jsonb_build_object('allowed',true,'plan','free','remaining',allowed_count-used_count-1);end;$$;grant execute on function public.consume_usage(text)to authenticated;
+create or replace function public.consume_usage(requested_type text) returns jsonb language plpgsql security definer set search_path=public as $$
+declare current_plan text;used_count integer;allowed_count integer;period_start timestamptz;
+begin
+  if auth.uid() is null then raise exception 'Authentication required';end if;
+  if requested_type not in('calculation','similarity','ai_research')then raise exception 'Invalid usage type';end if;
+  select coalesce(plan,'free')into current_plan from public.profiles where id=auth.uid();
+  period_start:=case when requested_type='ai_research'then date_trunc('month',now())else date_trunc('day',now())end;
+  allowed_count:=case
+    when current_plan='pro'and requested_type='ai_research'then 100
+    when current_plan='pro'then 1000
+    when requested_type='calculation'then 3
+    when requested_type='similarity'then 1
+    else 3 end;
+  select count(*)into used_count from public.usage_events where user_id=auth.uid()and event_type=requested_type and created_at>=period_start;
+  if used_count>=allowed_count then return jsonb_build_object('allowed',false,'plan',current_plan,'remaining',0,'limit',allowed_count);end if;
+  insert into public.usage_events(user_id,event_type)values(auth.uid(),requested_type);
+  return jsonb_build_object('allowed',true,'plan',current_plan,'remaining',allowed_count-used_count-1,'limit',allowed_count);
+end;$$;grant execute on function public.consume_usage(text)to authenticated;
 create or replace function public.delete_own_account() returns void language plpgsql security definer set search_path=public,auth as $$begin if auth.uid() is null then raise exception 'Authentication required';end if;delete from auth.users where id=auth.uid();end;$$;
 revoke all on function public.delete_own_account() from public;grant execute on function public.delete_own_account() to authenticated;
