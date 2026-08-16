@@ -1,6 +1,7 @@
 import { runDCA } from "./calculator.js";
 import { marketSymbol } from "./assets.js";
 import { currentSession,signIn,signOut,signUp,consumeUsage,saveResearch,loadResearch,loadProfile,exportAccountData,deleteAccount,billingAvailable,billingAction } from "./supabase-client.js";
+import "./research.js";
 
 const $ = s => document.querySelector(s);
 const $$ = s => [...document.querySelectorAll(s)];
@@ -70,8 +71,8 @@ $("#settingsSignOut").addEventListener("click",()=>{signOut();renderAccount();re
 async function openBilling(action,button){const message=$("#settingsMessage");button.disabled=true;message.textContent="Opening secure Stripe billing…";try{const data=await billingAction(action);location.href=data.url}catch(error){message.textContent=error.message;button.disabled=false}}
 $("#upgradePro").addEventListener("click",event=>openBilling("checkout",event.currentTarget));
 $("#manageBilling").addEventListener("click",event=>openBilling("portal",event.currentTarget));
-$("#exportAccount").addEventListener("click",async()=>{const message=$("#settingsMessage");try{const data=await exportAccountData(),blob=new Blob([JSON.stringify(data,null,2)],{type:"application/json"}),url=URL.createObjectURL(blob),link=document.createElement("a");link.href=url;link.download=`stockscope-data-${new Date().toISOString().slice(0,10)}.json`;link.click();URL.revokeObjectURL(url);message.textContent="Your account-data export has downloaded."}catch(error){message.textContent=error.message}});
-$("#deleteAccount").addEventListener("click",async()=>{const message=$("#settingsMessage");if(!confirm("Permanently delete your StockScope account and all saved research? This cannot be undone."))return;try{await deleteAccount();renderAccount();renderSaved();showView("discover")}catch(error){message.textContent=`Account deletion failed: ${error.message}`}});
+$("#exportAccount").addEventListener("click",async()=>{const message=$("#settingsMessage");try{const data=await exportAccountData(),blob=new Blob([JSON.stringify(data,null,2)],{type:"application/json"}),url=URL.createObjectURL(blob),link=document.createElement("a");link.href=url;link.download=`assetseek-data-${new Date().toISOString().slice(0,10)}.json`;link.click();URL.revokeObjectURL(url);message.textContent="Your account-data export has downloaded."}catch(error){message.textContent=error.message}});
+$("#deleteAccount").addEventListener("click",async()=>{const message=$("#settingsMessage");if(!confirm("Permanently delete your AssetSeek account and all saved research? This cannot be undone."))return;try{await deleteAccount();renderAccount();renderSaved();showView("discover")}catch(error){message.textContent=`Account deletion failed: ${error.message}`}});
 
 const checkoutState=new URLSearchParams(location.search).get("checkout");if(checkoutState&&currentSession()){history.replaceState({},"",location.pathname+location.hash);renderSettings().then(()=>{$("#settingsMessage").textContent=checkoutState==="success"?"Payment received. Your Pro plan will appear as soon as Stripe confirms it.":"Checkout cancelled — no charge was made."})}
 
@@ -212,9 +213,9 @@ $("#save").addEventListener("click",async()=>{
     try{await saveResearch("calculation",`${current.ticker} calculation`,{...current,points:undefined,purchases:undefined});await renderSaved();$("#save").textContent="★ Saved"}catch(error){alert(error.message)}
     return;
   }
-  const all=JSON.parse(localStorage.getItem("stockscope-v2")||"[]");
+  const all=JSON.parse(localStorage.getItem("assetseek-v2")||localStorage.getItem("stockscope-v2")||"[]");
   const saved={...current,points:undefined,savedAt:new Date().toISOString()};
-  all.unshift(saved);localStorage.setItem("stockscope-v2",JSON.stringify(all.slice(0,30)));renderSaved();
+  all.unshift(saved);localStorage.setItem("assetseek-v2",JSON.stringify(all.slice(0,30)));renderSaved();
   $("#save").textContent="★ Saved";setTimeout(()=>$("#save").textContent="☆ Save simulation",1200);
 });
 
@@ -227,14 +228,14 @@ async function renderSaved(){
       $$('[data-open-portfolio]').forEach(card=>card.addEventListener("click",()=>openSavedPortfolio(rows[Number(card.dataset.openPortfolio)])));return;
     }catch(error){el.innerHTML=`<div class="glass empty">${escapeHtml(error.message)}</div>`;return}
   }
-  const all=JSON.parse(localStorage.getItem("stockscope-v2")||"[]"),el=$("#savedList");
+  const all=JSON.parse(localStorage.getItem("assetseek-v2")||localStorage.getItem("stockscope-v2")||"[]"),el=$("#savedList");
   if(!all.length){el.innerHTML='<div class="glass empty">No saved simulations yet. Run a backtest and hit “Save simulation”.</div>';return}
   el.innerHTML=all.map((x,i)=>`<article class="glass saved-card">
     <div class="saved-card-top"><div><div class="section-tag">${x.frequency.toUpperCase()}</div><h3>${x.ticker}</h3></div><button data-i="${i}" class="delete">Delete</button></div>
     <p>${x.start} → ${x.end} · ${gbp(x.amount)} per contribution</p>
     <div class="saved-nums"><div><span>Invested</span><b>${gbp(x.invested)}</b></div><div><span>Value</span><b>${gbp(x.value)}</b></div><div><span>Return</span><b>${num(x.returnPct,1)}%</b></div></div>
   </article>`).join("");
-  $$(".delete").forEach(b=>b.addEventListener("click",()=>{all.splice(Number(b.dataset.i),1);localStorage.setItem("stockscope-v2",JSON.stringify(all));renderSaved()}));
+  $$(".delete").forEach(b=>b.addEventListener("click",()=>{all.splice(Number(b.dataset.i),1);localStorage.setItem("assetseek-v2",JSON.stringify(all));renderSaved()}));
 }
 renderSaved();
 
@@ -243,8 +244,8 @@ async function renderAlerts(){const status=$("#alertStatus"),list=$("#alertList"
 $("#refreshAlerts").addEventListener("click",renderAlerts);
 
 let portfolioFrequency="daily",portfolioMax=3;
-let portfolioAssets=JSON.parse(localStorage.getItem("stockscope-portfolio-assets")||'[{"ticker":"NVDA","type":"stock"},{"ticker":"IONQ","type":"stock"},{"ticker":"BTC","type":"crypto"}]');
-function savePortfolioAssets(){localStorage.setItem("stockscope-portfolio-assets",JSON.stringify(portfolioAssets))}
+let portfolioAssets=JSON.parse(localStorage.getItem("assetseek-portfolio-assets")||localStorage.getItem("stockscope-portfolio-assets")||'[{"ticker":"NVDA","type":"stock"},{"ticker":"IONQ","type":"stock"},{"ticker":"BTC","type":"crypto"}]');
+function savePortfolioAssets(){localStorage.setItem("assetseek-portfolio-assets",JSON.stringify(portfolioAssets))}
 async function refreshPortfolioLimit(){if(["localhost","127.0.0.1","::1"].includes(location.hostname)){portfolioMax=12;$("#portfolioLimit").textContent="Local development · up to 12 assets";return}try{const profile=await loadProfile();portfolioMax=profile?.plan==="pro"?12:3;$("#portfolioLimit").textContent=profile?.plan==="pro"?"Pro plan · up to 12 assets":"Free plan · up to 3 assets"}catch{portfolioMax=3;$("#portfolioLimit").textContent="Free plan · up to 3 assets"}}
 async function loadPortfolioPrices(){if(!portfolioAssets.length)return;const requested=portfolioAssets.map(asset=>marketSymbol(asset.ticker,asset.type)),status=$("#portfolioPriceStatus");try{const response=await fetch(`/api/quotes?symbols=${encodeURIComponent(requested.join(","))}`),data=await response.json();if(!response.ok)throw new Error(data.error||"Prices unavailable.");const bySymbol=new Map(data.quotes.map(quote=>[quote.symbol,quote]));portfolioAssets.forEach(asset=>{const providerCode=asset.type==="crypto"?marketSymbol(asset.ticker,"crypto"):`${asset.ticker}.US`,quote=bySymbol.get(providerCode),box=document.querySelector(`[data-portfolio-price="${CSS.escape(asset.ticker)}"]`);if(!box)return;if(!quote){box.innerHTML='<b>Unavailable</b><small>Latest quote</small>';return}const change=Number.isFinite(quote.changePct)?quote.changePct:null;box.innerHTML=`<b>${usd(quote.price)}</b><small class="${change===null?"":change>=0?"positive":"negative"}">${change===null?"Delayed quote":`${change>=0?"+":""}${num(change,2)}% today`}</small>`});status.textContent=`Latest delayed prices · ${data.provider}`}catch(error){$$('[data-portfolio-price]').forEach(box=>box.innerHTML='<b>Unavailable</b><small>Quote could not load</small>');status.textContent=error.message}}
 function renderPortfolioAssets(){const el=$("#portfolioAssets");if(!portfolioAssets.length){el.innerHTML='<div class="empty">Add at least two assets to build a diversified research scenario.</div>';return}el.innerHTML=portfolioAssets.map((asset,index)=>`<article class="portfolio-asset"><span class="ticker-avatar">${escapeHtml(asset.ticker[0])}</span><span><strong>${escapeHtml(asset.ticker)}</strong><small>${escapeHtml(asset.name||(asset.type==="crypto"?"Cryptoasset":"Listed stock"))}</small></span><span class="portfolio-price" data-portfolio-price="${escapeHtml(asset.ticker)}"><b>Loading…</b><small>Latest USD price</small></span><button class="portfolio-remove" data-portfolio-remove="${index}" aria-label="Remove ${escapeHtml(asset.ticker)}">Remove</button></article>`).join("");$$('[data-portfolio-remove]').forEach(button=>button.addEventListener("click",()=>{portfolioAssets.splice(Number(button.dataset.portfolioRemove),1);savePortfolioAssets();renderPortfolioAssets();$("#portfolioResult").classList.add("hidden")}));loadPortfolioPrices()}

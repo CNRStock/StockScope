@@ -1,6 +1,6 @@
-# StockScope V2
+# AssetSeek
 
-StockScope V2 upgrades the original visual prototype into a real historical-data architecture with a proper recurring-investment engine.
+AssetSeek is an AI-assisted stock and crypto research workspace. It combines historical backtesting, deterministic evidence scores, comparable-asset discovery and cited comparative research without presenting the output as investment advice or a guaranteed forecast.
 
 ## What changed
 
@@ -16,7 +16,11 @@ StockScope V2 upgrades the original visual prototype into a real historical-data
 - Portfolio-value vs cumulative-contribution chart
 - Saved simulations in browser storage
 - Methodology page explaining the calculation
-- Fundamentals / similarity section prepared for the next milestone
+- Stock and crypto similarity discovery
+- Mixed-asset comparison workspace with an anchor and up to three peers
+- Indexed price trends, volatility, liquidity, hype risk, themes and SEC fundamentals
+- Sourced news and an inspectable source ledger
+- Optional OpenAI-generated research briefs with strict structured output and a deterministic fallback
 
 ## Market data
 
@@ -30,10 +34,12 @@ You need Node.js 18 or newer.
 
 1. Create an EODHD API key.
 2. Copy `.env.example` to `.env`.
-3. Add your key:
+3. Add your market-data key. To enable the optional cited AI brief, also add an OpenAI API key:
 
 ```env
 EODHD_API_KEY=YOUR_KEY
+OPENAI_API_KEY=YOUR_KEY
+OPENAI_MODEL=gpt-5.4-mini
 ```
 
 4. Run:
@@ -69,6 +75,7 @@ Example: if £6/day is selected and Saturday + Sunday are non-trading days, thos
 - Brokerage fees, spreads, tax and withholding tax are not yet included.
 - Adjusted-close methodology depends on the market-data provider.
 - Similarity, allocation and alert outputs are mechanical research signals, not investment advice or forecasts.
+- AI is given the collected evidence and source ledger; it cannot alter the numerical scores. AI text can still be incomplete or wrong and must be verified.
 
 ## Private-beta deployment (Render)
 
@@ -76,7 +83,7 @@ The repository-root `render.yaml` defines the Node web service, production healt
 
 1. Push the repository to a private GitHub repository.
 2. In Render, select **New → Blueprint** and connect the repository.
-3. Enter the secret environment variables requested by the Blueprint: `EODHD_API_KEY`, `SEC_USER_AGENT`, `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY`, `BETA_USERNAME`, and `BETA_PASSWORD`.
+3. Enter the secret environment variables requested by the Blueprint: `EODHD_API_KEY`, `SEC_USER_AGENT`, `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY`, `BETA_USERNAME`, and `BETA_PASSWORD`. `OPENAI_API_KEY` is optional.
 4. Deploy and verify that `/api/health` returns `status: ok`.
 5. Add the Render URL to Supabase Authentication → URL Configuration as the Site URL and an allowed redirect URL.
 
@@ -87,7 +94,7 @@ The repository-root `render.yaml` defines the Node web service, production healt
 Billing is safely dormant while `BILLING_ENABLED=false`. To test Pro subscriptions:
 
 1. Re-run `supabase/schema.sql` in the Supabase SQL editor to add the Stripe profile columns.
-2. In Stripe test mode, create a StockScope Pro product with a recurring GBP price.
+2. In Stripe test mode, create an AssetSeek Pro product with a recurring GBP price. An existing legacy product can be renamed in Stripe without changing its price ID.
 3. Add `SUPABASE_SERVICE_ROLE_KEY`, `STRIPE_SECRET_KEY`, and the recurring `STRIPE_PRO_PRICE_ID` to the server environment. Never expose these in browser code.
 4. Create a Stripe webhook endpoint at `https://stockscope-private-beta.onrender.com/api/stripe/webhook` for `checkout.session.completed`, `customer.subscription.updated`, `customer.subscription.deleted`, and `invoice.payment_failed`; then add its signing secret as `STRIPE_WEBHOOK_SECRET`.
 5. Set `APP_URL` to the deployed HTTPS origin and change `BILLING_ENABLED` to `true`.
@@ -99,13 +106,15 @@ Subscription access follows Stripe status: `active`, `trialing`, and `past_due` 
 ## Structure
 
 ```text
-stockscope_v2/
+stockscope_v2/ (legacy folder name)
 ├── package.json
 ├── server.js
+├── research-model.js
 ├── .env.example
 ├── README.md
 └── public/
     ├── index.html
     ├── styles.css
-    └── app.js
+    ├── app.js
+    └── research.js
 ```

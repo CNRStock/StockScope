@@ -10,6 +10,7 @@ import { summarizeSecCompanyFacts } from "./sec-fundamentals.js";
 import { compareProfiles } from "./similarity.js";
 import { scoreCrypto } from "./crypto-model.js";
 import { evidenceFromPrices,allocateEvidence } from "./portfolio-model.js";
+import { summarizeResearchHistory,buildEvidenceAnalysis,RESEARCH_SCHEMA } from "./research-model.js";
 import { securityHeaders,createRateLimiter } from "./security.js";
 import { subscriptionRecord } from "./billing-model.js";
 
@@ -40,7 +41,7 @@ const mime = {
 };
 const production=process.env.NODE_ENV==="production",baseHeaders=securityHeaders({production});
 const generalLimit=createRateLimiter({limit:Number(process.env.API_RATE_LIMIT||120)}),expensiveLimit=createRateLimiter({limit:Number(process.env.EXPENSIVE_RATE_LIMIT||20)});
-const expensivePaths=new Set(["/api/similar","/api/crypto-similar","/api/portfolio-evidence"]);
+const expensivePaths=new Set(["/api/similar","/api/crypto-similar","/api/portfolio-evidence","/api/research"]);
 const providerFetch=(url,options={})=>fetch(url,{...options,signal:options.signal||AbortSignal.timeout(15_000)});
 function secureEqual(left,right){const a=Buffer.from(String(left)),b=Buffer.from(String(right));return a.length===b.length&&timingSafeEqual(a,b)}
 function betaAuthorized(req){if(process.env.PRIVATE_BETA!=="true")return true;const header=String(req.headers.authorization||"");if(!header.startsWith("Basic "))return false;try{const decoded=Buffer.from(header.slice(6),"base64").toString("utf8"),separator=decoded.indexOf(":");if(separator<0)return false;return secureEqual(decoded.slice(0,separator),process.env.BETA_USERNAME||"")&&secureEqual(decoded.slice(separator+1),process.env.BETA_PASSWORD||"")}catch{return false}}
@@ -73,7 +74,7 @@ async function updateSubscription(subscription,userIdHint){
   const customerId=typeof subscription.customer==="string"?subscription.customer:subscription.customer?.id;
   let userId=userIdHint||subscription.metadata?.user_id;
   if(!userId&&customerId){const rows=await supabaseAdmin(`profiles?select=id&stripe_customer_id=eq.${encodeURIComponent(customerId)}`);userId=rows?.[0]?.id}
-  if(!userId)throw new Error("No StockScope user is linked to this Stripe subscription.");
+  if(!userId)throw new Error("No AssetSeek user is linked to this Stripe subscription.");
   return supabaseAdmin(`profiles?id=eq.${encodeURIComponent(userId)}`,{method:"PATCH",body:subscriptionRecord(subscription)});
 }
 function appUrl(){return String(process.env.APP_URL||`http://localhost:${PORT}`).replace(/\/$/,"")}
@@ -139,7 +140,7 @@ async function historical(reqUrl, res) {
   endpoint.searchParams.set("period", "d");
 
   try {
-    const r = await providerFetch(endpoint, {headers: {"user-agent":"StockScope/2.0"}});
+    const r = await providerFetch(endpoint, {headers: {"user-agent":"AssetSeek/2.0"}});
     const text = await r.text();
     if (!r.ok) return json(res, r.status, {error:`Market-data provider returned ${r.status}.`, detail:text.slice(0,400)});
     let rows;
@@ -190,7 +191,7 @@ async function news(reqUrl,res){
   endpoint.searchParams.set("limit","6");
   endpoint.searchParams.set("from",new Date(Date.now()-120*86400000).toISOString().slice(0,10));
   try{
-    const response=await providerFetch(endpoint,{headers:{"user-agent":"StockScope/2.0"}}),text=await response.text();
+    const response=await providerFetch(endpoint,{headers:{"user-agent":"AssetSeek/2.0"}}),text=await response.text();
     if(!response.ok)return json(res,response.status,{error:`News provider returned ${response.status}.`,detail:text.slice(0,300)});
     let rows;try{rows=JSON.parse(text)}catch{return json(res,502,{error:"Invalid response from news provider."})}
     if(!Array.isArray(rows))return json(res,502,{error:"Unexpected response from news provider."});
@@ -209,14 +210,14 @@ async function quotes(reqUrl,res){
   const key=process.env.EODHD_API_KEY;if(!key)return json(res,503,{error:"Market data API key is not configured."});
   const providerSymbols=symbols.map(providerSymbol),endpoint=new URL(`https://eodhd.com/api/real-time/${encodeURIComponent(providerSymbols[0])}`);
   endpoint.searchParams.set("api_token",key);endpoint.searchParams.set("fmt","json");if(providerSymbols.length>1)endpoint.searchParams.set("s",providerSymbols.slice(1).join(","));
-  try{const response=await providerFetch(endpoint,{headers:{"user-agent":"StockScope/2.0"}}),text=await response.text();if(!response.ok)return json(res,response.status,{error:`Quote provider returned ${response.status}.`,detail:text.slice(0,300)});let payload;try{payload=JSON.parse(text)}catch{return json(res,502,{error:"Invalid quote response."})}const rows=Array.isArray(payload)?payload:[payload],quotes=rows.map(row=>({symbol:String(row.code||"").toUpperCase(),price:Number(row.close),previousClose:Number(row.previousClose),changePct:Number(row.change_p),timestamp:Number(row.timestamp)})).filter(row=>row.symbol&&Number.isFinite(row.price)&&row.price>0);return json(res,200,{provider:"EODHD Live (Delayed)",currency:"USD",quotes})}catch(error){return json(res,502,{error:"Could not reach the quote provider.",detail:error.message})}
+  try{const response=await providerFetch(endpoint,{headers:{"user-agent":"AssetSeek/2.0"}}),text=await response.text();if(!response.ok)return json(res,response.status,{error:`Quote provider returned ${response.status}.`,detail:text.slice(0,300)});let payload;try{payload=JSON.parse(text)}catch{return json(res,502,{error:"Invalid quote response."})}const rows=Array.isArray(payload)?payload:[payload],quotes=rows.map(row=>({symbol:String(row.code||"").toUpperCase(),price:Number(row.close),previousClose:Number(row.previousClose),changePct:Number(row.change_p),timestamp:Number(row.timestamp)})).filter(row=>row.symbol&&Number.isFinite(row.price)&&row.price>0);return json(res,200,{provider:"EODHD Live (Delayed)",currency:"USD",quotes})}catch(error){return json(res,502,{error:"Could not reach the quote provider.",detail:error.message})}
 }
 
 async function validateAsset(reqUrl,res){
   const ticker=safeTicker(reqUrl.searchParams.get("symbol")),type=reqUrl.searchParams.get("type")==="crypto"?"crypto":"stock",key=process.env.EODHD_API_KEY;
   if(!ticker)return json(res,400,{error:"Provide a symbol."});if(!key)return json(res,503,{error:"Market data API key is not configured."});
   const endpoint=new URL(`https://eodhd.com/api/search/${encodeURIComponent(ticker)}`);endpoint.searchParams.set("api_token",key);endpoint.searchParams.set("fmt","json");endpoint.searchParams.set("limit","20");
-  try{const response=await providerFetch(endpoint,{headers:{"user-agent":"StockScope/2.0"}}),rows=await response.json();if(!response.ok)throw new Error(`Search provider returned ${response.status}.`);const match=(Array.isArray(rows)?rows:[]).find(item=>type==="crypto"?String(item.Exchange).toUpperCase()==="CC"&&String(item.Code).toUpperCase().replace(/-USD$/,"")===ticker.replace(/-USD$/,""):String(item.Exchange).toUpperCase()==="US"&&String(item.Code).toUpperCase()===ticker);if(!match)return json(res,404,{error:`No covered ${type} matched ${ticker}.`});return json(res,200,{ticker:type==="crypto"?ticker.replace(/-USD$/,""):ticker,type,name:match.Name||ticker,currency:match.Currency||"USD",exchange:match.Exchange})}catch(error){return json(res,502,{error:"Could not validate this asset.",detail:error.message})}
+  try{const response=await providerFetch(endpoint,{headers:{"user-agent":"AssetSeek/2.0"}}),rows=await response.json();if(!response.ok)throw new Error(`Search provider returned ${response.status}.`);const match=(Array.isArray(rows)?rows:[]).find(item=>type==="crypto"?String(item.Exchange).toUpperCase()==="CC"&&String(item.Code).toUpperCase().replace(/-USD$/,"")===ticker.replace(/-USD$/,""):String(item.Exchange).toUpperCase()==="US"&&String(item.Code).toUpperCase()===ticker);if(!match)return json(res,404,{error:`No covered ${type} matched ${ticker}.`});return json(res,200,{ticker:type==="crypto"?ticker.replace(/-USD$/,""):ticker,type,name:match.Name||ticker,currency:match.Currency||"USD",exchange:match.Exchange})}catch(error){return json(res,502,{error:"Could not validate this asset.",detail:error.message})}
 }
 
 async function fundamentals(reqUrl,res){
@@ -231,7 +232,7 @@ async function fundamentals(reqUrl,res){
   endpoint.searchParams.set("api_token",key);
   endpoint.searchParams.set("fmt","json");
   try{
-    const response=await providerFetch(endpoint,{headers:{"user-agent":"StockScope/2.0"}});
+    const response=await providerFetch(endpoint,{headers:{"user-agent":"AssetSeek/2.0"}});
     const text=await response.text();
     if(response.status===403) return secFundamentals(ticker,asOf,res);
     if(!response.ok) return json(res,response.status,{error:`Fundamentals provider returned ${response.status}.`,detail:text.slice(0,300)});
@@ -255,7 +256,7 @@ async function secJson(url,userAgent){
 
 async function secFundamentals(ticker,asOf,res){
   const userAgent=process.env.SEC_USER_AGENT;
-  if(!userAgent||!userAgent.includes("@"))return json(res,503,{error:"SEC fallback needs a contact user agent.",detail:"Add SEC_USER_AGENT=StockScope your-email@example.com to .env, then restart the server."});
+  if(!userAgent||!userAgent.includes("@"))return json(res,503,{error:"SEC fallback needs a contact user agent.",detail:"Add SEC_USER_AGENT=AssetSeek your-email@example.com to .env, then restart the server."});
   try{
     if(!secTickersCache)secTickersCache=await secJson("https://www.sec.gov/files/company_tickers.json",userAgent);
     const symbol=ticker.split(".")[0];
@@ -286,7 +287,8 @@ async function getSecSummary(ticker,asOf,userAgent){
   const cik=String(company.cik_str).padStart(10,"0");
   let facts=secFactsCache.get(cik);
   if(!facts){facts=await secJson(`https://data.sec.gov/api/xbrl/companyfacts/CIK${cik}.json`,userAgent);secFactsCache.set(cik,facts);await pause(125)}
-  return summarizeSecCompanyFacts(facts,asOf);
+  const summary=summarizeSecCompanyFacts(facts,asOf);
+  return summary?{...summary,cik}:null;
 }
 
 async function similarCompanies(reqUrl,res){
@@ -331,7 +333,7 @@ async function cryptoSimilar(reqUrl,res){
     if(!cryptoMarketsCache.data||Date.now()-cryptoMarketsCache.at>5*60*1000){
       const ids=Object.keys(CRYPTO_UNIVERSE).join(",");
       const url=`https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&ids=${ids}&order=market_cap_desc&per_page=100&page=1&sparkline=false&price_change_percentage=30d`;
-      const response=await providerFetch(url,{headers:{"user-agent":"StockScope/2.0"}});
+      const response=await providerFetch(url,{headers:{"user-agent":"AssetSeek/2.0"}});
       if(!response.ok)throw new Error(`CoinGecko returned ${response.status}.`);
       cryptoMarketsCache={at:Date.now(),data:await response.json()};
     }
@@ -351,13 +353,88 @@ async function portfolioEvidence(reqUrl,res){
   try{const profiles=await Promise.all(assets.map(async asset=>{const symbol=providerSymbol(asset.type==="crypto"?`${asset.ticker.replace(/-USD$/,'')}-USD.CC`:asset.ticker),endpoint=new URL(`https://eodhd.com/api/eod/${encodeURIComponent(symbol)}`);endpoint.searchParams.set("api_token",key);endpoint.searchParams.set("fmt","json");endpoint.searchParams.set("from",from);endpoint.searchParams.set("to",to);const response=await providerFetch(endpoint,{headers:{"user-agent":"StockScope/2.0"}});if(!response.ok)throw new Error(`${asset.ticker} history returned ${response.status}.`);const rows=await response.json();if(!Array.isArray(rows)||rows.length<30)throw new Error(`${asset.ticker} has insufficient history.`);const stockThemes=THEME_MAP[asset.ticker]||[],cryptoEntry=Object.values(CRYPTO_UNIVERSE).find(item=>item.symbol===asset.ticker),themes=asset.type==="crypto"?(cryptoEntry?.themes||[]):stockThemes,otherThemes=assets.flatMap(other=>other===asset?[]:(other.type==="crypto"?(Object.values(CRYPTO_UNIVERSE).find(item=>item.symbol===other.ticker)?.themes||[]):(THEME_MAP[other.ticker]||[]))),themeOverlap=themes.filter(theme=>otherThemes.includes(theme)).length;return{...asset,themes,...evidenceFromPrices(rows,{assetType:asset.type,themeOverlap})}}));const weights=allocateEvidence(profiles);return json(res,200,{provider:"EODHD adjusted prices and volume",method:"Risk-adjusted stability, liquidity, hype and theme-diversification model",items:profiles.map((profile,index)=>({...profile,weight:weights[index]}))})}catch(error){return json(res,502,{error:"Could not build portfolio evidence.",detail:error.message})}
 }
 
+function researchThemes(asset){
+  if(asset.type==="crypto")return Object.values(CRYPTO_UNIVERSE).find(item=>item.symbol===asset.ticker)?.themes||[];
+  return THEME_MAP[asset.ticker]||[];
+}
+
+async function researchHistory(asset,from,to,key){
+  const rawSymbol=asset.type==="crypto"?`${asset.ticker.replace(/-USD$/,'')}-USD.CC`:asset.ticker;
+  const endpoint=new URL(`https://eodhd.com/api/eod/${encodeURIComponent(providerSymbol(rawSymbol))}`);
+  endpoint.searchParams.set("api_token",key);endpoint.searchParams.set("fmt","json");endpoint.searchParams.set("from",from);endpoint.searchParams.set("to",to);endpoint.searchParams.set("period","d");
+  const response=await providerFetch(endpoint,{headers:{"user-agent":"AssetSeek/2.0"}});
+  if(!response.ok)throw new Error(`${asset.ticker} history returned ${response.status}.`);
+  const rows=await response.json();
+  if(!Array.isArray(rows)||rows.length<20)throw new Error(`${asset.ticker} has insufficient recent history for comparison.`);
+  return rows;
+}
+
+async function researchNews(asset,key){
+  const rawSymbol=asset.type==="crypto"?`${asset.ticker.replace(/-USD$/,'')}-USD.CC`:asset.ticker;
+  const endpoint=new URL("https://eodhd.com/api/news");
+  endpoint.searchParams.set("api_token",key);endpoint.searchParams.set("fmt","json");endpoint.searchParams.set("s",providerSymbol(rawSymbol));endpoint.searchParams.set("limit","4");endpoint.searchParams.set("from",new Date(Date.now()-180*86400000).toISOString().slice(0,10));
+  try{
+    const response=await providerFetch(endpoint,{headers:{"user-agent":"AssetSeek/2.0"}});
+    if(!response.ok)return[];
+    const rows=await response.json();
+    return(Array.isArray(rows)?rows:[]).map(item=>({title:String(item.title||"").slice(0,240),date:String(item.date||"").slice(0,10),link:String(item.link||"").slice(0,1000),source:String(item.source||"Financial news").slice(0,80),summary:String(item.content||item.summary||"").replace(/<[^>]*>/g," ").replace(/\s+/g," ").trim().slice(0,500)})).filter(item=>item.title&&/^https?:\/\//i.test(item.link));
+  }catch{return[]}
+}
+
+function openAIOutputText(payload){
+  for(const item of payload?.output||[])for(const content of item?.content||[])if(content?.type==="output_text"&&content.text)return content.text;
+  return payload?.output_text||null;
+}
+
+async function generateAIResearch(assets,sources){
+  const apiKey=process.env.OPENAI_API_KEY;if(!apiKey)return null;
+  const model=process.env.OPENAI_MODEL||"gpt-5.4-mini";
+  const evidence=assets.map(asset=>({ticker:asset.ticker,type:asset.type,themes:asset.themes,stats:asset.stats,fundamentals:asset.fundamentals,news:asset.news.map(({title,date,source,summary,sourceId})=>({title,date,source,summary,sourceId})),sourceIds:asset.sourceIds}));
+  const response=await fetch("https://api.openai.com/v1/responses",{method:"POST",signal:AbortSignal.timeout(60_000),headers:{authorization:`Bearer ${apiKey}`,"content-type":"application/json"},body:JSON.stringify({
+    model,store:false,max_output_tokens:1800,reasoning:{effort:"low"},
+    instructions:"You are AssetSeek's evidence analyst. Compare only the supplied assets and use only supplied evidence. The first asset is the anchor. Cite factual claims with source IDs exactly like [S1]. Clearly distinguish fact from inference and call out missing evidence. Never give a buy, sell or hold instruction, target price, personalised advice, certainty, or a promise of returns. Be concise, balanced and useful to a serious retail researcher.",
+    input:[{role:"user",content:[{type:"input_text",text:JSON.stringify({task:"Create a cited comparative research brief",assets:evidence,sources})}]}],
+    text:{verbosity:"medium",format:{type:"json_schema",name:"asset_research",strict:true,schema:RESEARCH_SCHEMA}}
+  })});
+  const text=await response.text();let payload;try{payload=JSON.parse(text)}catch{throw new Error("The AI provider returned an invalid response.")}
+  if(!response.ok)throw new Error(payload?.error?.message||`AI provider returned ${response.status}.`);
+  const output=openAIOutputText(payload);if(!output)throw new Error("The AI provider returned no research brief.");
+  return{analysis:JSON.parse(output),model};
+}
+
+async function comparativeResearch(reqUrl,res){
+  const requested=String(reqUrl.searchParams.get("assets")||"").split(",").slice(0,4).map(entry=>{const[symbol,type]=entry.split(":");return{ticker:safeTicker(symbol).replace(/-USD$/,""),type:type==="crypto"?"crypto":"stock"}}).filter(asset=>asset.ticker);
+  const assets=[...new Map(requested.map(asset=>[`${asset.ticker}:${asset.type}`,asset])).values()];
+  if(assets.length<2)return json(res,400,{error:"Choose an anchor and at least one comparison asset."});
+  const key=process.env.EODHD_API_KEY;if(!key)return json(res,503,{error:"Market data API key is not configured."});
+  const to=new Date().toISOString().slice(0,10),from=new Date(Date.now()-370*86400000).toISOString().slice(0,10),sources=[];
+  try{
+    const historyAndNews=await Promise.all(assets.map(async asset=>({history:await researchHistory(asset,from,to,key),news:await researchNews(asset,key)})));
+    const resultAssets=[];
+    for(let index=0;index<assets.length;index++){
+      const asset=assets[index],themes=researchThemes(asset),otherThemes=assets.flatMap((other,otherIndex)=>otherIndex===index?[]:researchThemes(other)),themeOverlap=themes.filter(theme=>otherThemes.includes(theme)).length;
+      const stats=summarizeResearchHistory(historyAndNews[index].history,{assetType:asset.type,themeOverlap});if(!stats)throw new Error(`${asset.ticker} history could not be summarised.`);
+      const historyId=`S${sources.length+1}`;sources.push({id:historyId,title:`${asset.ticker} adjusted daily prices (${stats.periodStart} to ${stats.periodEnd})`,publisher:"EODHD",date:stats.periodEnd,url:"https://eodhd.com/financial-apis/api-for-historical-data-and-volumes/"});
+      let fundamentals=null,fundamentalsId=null;
+      if(asset.type==="stock"&&process.env.SEC_USER_AGENT?.includes("@")){
+        try{fundamentals=await getSecSummary(asset.ticker,to,process.env.SEC_USER_AGENT);if(fundamentals?.cik){fundamentalsId=`S${sources.length+1}`;sources.push({id:fundamentalsId,title:`${fundamentals.company} SEC company facts`,publisher:"SEC EDGAR",date:fundamentals.period,url:`https://data.sec.gov/api/xbrl/companyfacts/CIK${fundamentals.cik}.json`})}}catch{/* Market evidence remains usable if SEC coverage is unavailable. */}
+      }
+      const assetNews=historyAndNews[index].news.map(article=>{const sourceId=`S${sources.length+1}`;sources.push({id:sourceId,title:article.title,publisher:article.source,date:article.date,url:article.link});return{...article,sourceId}});
+      resultAssets.push({...asset,name:fundamentals?.company||asset.ticker,themes,stats,fundamentals:fundamentals?{company:fundamentals.company,period:fundamentals.period,metrics:fundamentals.metrics,sourceId:fundamentalsId}:null,news:assetNews,sourceIds:{history:historyId,fundamentals:fundamentalsId}});
+    }
+    let analysis=buildEvidenceAnalysis(resultAssets),ai={enabled:Boolean(process.env.OPENAI_API_KEY),used:false,model:null,reason:process.env.OPENAI_API_KEY?"AI analysis could not be completed; the evidence fallback is shown.":"Add OPENAI_API_KEY to enable the cited AI brief."};
+    if(process.env.OPENAI_API_KEY)try{const generated=await generateAIResearch(resultAssets,sources);analysis=generated.analysis;ai={enabled:true,used:true,model:generated.model,reason:null}}catch(error){console.error("AssetSeek AI research fallback:",error.message);ai.reason=error.message}
+    return json(res,200,{generatedAt:new Date().toISOString(),provider:"EODHD market data · SEC EDGAR fundamentals · sourced news",assets:resultAssets,analysis,sources,ai});
+  }catch(error){return json(res,502,{error:"Could not build this comparison.",detail:error.message})}
+}
+
 const server = http.createServer(async (req,res) => {
   if(String(req.url||"").length>2_048)return json(res,414,{error:"Request URL is too long."});
   const reqUrl = new URL(req.url, `http://${req.headers.host || "localhost"}`);
   const postPaths=new Set(["/api/billing/checkout","/api/billing/portal","/api/billing/status"]);
-  if(reqUrl.pathname==="/api/health")return json(res,200,{status:"ok",version:"2.0.0",uptimeSeconds:Math.round(process.uptime()),marketDataConfigured:Boolean(process.env.EODHD_API_KEY),databaseConfigured:Boolean(process.env.SUPABASE_URL&&process.env.SUPABASE_PUBLISHABLE_KEY)});
+  if(reqUrl.pathname==="/api/health")return json(res,200,{status:"ok",version:"2.0.0",uptimeSeconds:Math.round(process.uptime()),marketDataConfigured:Boolean(process.env.EODHD_API_KEY),databaseConfigured:Boolean(process.env.SUPABASE_URL&&process.env.SUPABASE_PUBLISHABLE_KEY),aiConfigured:Boolean(process.env.OPENAI_API_KEY)});
   if(reqUrl.pathname==="/api/stripe/webhook"){if(req.method!=="POST")return json(res,405,{error:"Method not allowed."});return stripeWebhook(req,res)}
-  if(!postPaths.has(reqUrl.pathname)&&!betaAuthorized(req)){res.writeHead(401,{...baseHeaders,"www-authenticate":'Basic realm="StockScope private beta", charset="UTF-8"',"content-type":"text/plain; charset=utf-8","cache-control":"no-store"});return res.end("StockScope private beta access required.")}
+  if(!postPaths.has(reqUrl.pathname)&&!betaAuthorized(req)){res.writeHead(401,{...baseHeaders,"www-authenticate":'Basic realm="AssetSeek private beta", charset="UTF-8"',"content-type":"text/plain; charset=utf-8","cache-control":"no-store"});return res.end("AssetSeek private beta access required.")}
   const isApi=reqUrl.pathname.startsWith("/api/");
   if(!["GET","HEAD"].includes(req.method||"GET")&&!(req.method==="POST"&&postPaths.has(reqUrl.pathname)))return json(res,405,{error:"Method not allowed."});
   if(isApi){
@@ -367,7 +444,7 @@ const server = http.createServer(async (req,res) => {
   }
 
   if (reqUrl.pathname === "/api/status") return apiStatus(res);
-  if (reqUrl.pathname === "/api/config") return json(res,200,{supabaseUrl:process.env.SUPABASE_URL||null,supabaseKey:process.env.SUPABASE_PUBLISHABLE_KEY||null,unlimitedBeta:process.env.PRIVATE_BETA==="true"&&process.env.BETA_UNLIMITED==="true",billingEnabled});
+  if (reqUrl.pathname === "/api/config") return json(res,200,{supabaseUrl:process.env.SUPABASE_URL||null,supabaseKey:process.env.SUPABASE_PUBLISHABLE_KEY||null,unlimitedBeta:process.env.PRIVATE_BETA==="true"&&process.env.BETA_UNLIMITED==="true",billingEnabled,aiEnabled:Boolean(process.env.OPENAI_API_KEY),aiModel:process.env.OPENAI_MODEL||"gpt-5.4-mini"});
   if (reqUrl.pathname === "/api/billing/checkout") return createCheckout(req,res);
   if (reqUrl.pathname === "/api/billing/portal") return createPortal(req,res);
   if (reqUrl.pathname === "/api/billing/status") return refreshBillingStatus(req,res);
@@ -376,6 +453,7 @@ const server = http.createServer(async (req,res) => {
   if (reqUrl.pathname === "/api/quotes") return quotes(reqUrl,res);
   if (reqUrl.pathname === "/api/assets/validate") return validateAsset(reqUrl,res);
   if (reqUrl.pathname === "/api/portfolio-evidence") return portfolioEvidence(reqUrl,res);
+  if (reqUrl.pathname === "/api/research") return comparativeResearch(reqUrl,res);
   if (reqUrl.pathname === "/api/fundamentals") return fundamentals(reqUrl,res);
   if (reqUrl.pathname === "/api/similar") return similarCompanies(reqUrl,res);
   if (reqUrl.pathname === "/api/crypto-similar") return cryptoSimilar(reqUrl,res);
@@ -398,6 +476,6 @@ const server = http.createServer(async (req,res) => {
 });
 
 validateProductionEnvironment();
-server.on("error",error=>{console.error("StockScope server error:",error.message);process.exitCode=1});
-server.listen(PORT,"0.0.0.0",()=>{console.log(`StockScope running on port ${PORT} (${production?"production":"development"})`)});
+server.on("error",error=>{console.error("AssetSeek server error:",error.message);process.exitCode=1});
+server.listen(PORT,"0.0.0.0",()=>{console.log(`AssetSeek running on port ${PORT} (${production?"production":"development"})`)});
 for(const signal of ["SIGTERM","SIGINT"])process.on(signal,()=>server.close(()=>process.exit(0)));

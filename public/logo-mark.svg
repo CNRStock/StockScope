@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-labelledby="title desc">
-  <title id="title">StockScope logo</title>
-  <desc id="desc">A scope lens containing a rising market path.</desc>
+  <title id="title">AssetSeek logo</title>
+  <desc id="desc">A research lens containing a rising market path.</desc>
   <defs>
     <linearGradient id="tile" x1="8" y1="7" x2="57" y2="59" gradientUnits="userSpaceOnUse">
       <stop stop-color="#d7ff55"/>
