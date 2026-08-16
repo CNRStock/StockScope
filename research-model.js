@@ -40,6 +40,42 @@ export const RESEARCH_SCHEMA={
   required:["headline","summary","commonGround","differences","catalysts","risks","verdict","questions"]
 };
 
+const NEXT_WAVE_THEMES={
+  "AI compute":["quantum computing","photonics","power and cooling","grid infrastructure","robotics","cybersecurity","AI drug discovery"],
+  semiconductors:["photonics","quantum computing","data centres","networking"],
+  "data centres":["power and cooling","grid infrastructure","photonics","networking","cybersecurity"],
+  "quantum computing":["photonics","cybersecurity","networking"],
+  "AI software":["cybersecurity","robotics","automation","AI drug discovery"],
+  AI:["decentralised compute","agents","data","infrastructure","interoperability"],
+  infrastructure:["interoperability","oracles","data","storage","decentralised compute"],
+  "smart contracts":["interoperability","oracles","tokenisation","infrastructure"],
+  defi:["tokenisation","oracles","interoperability"],
+  "store of value":["payments","tokenisation","infrastructure"],
+  payments:["enterprise infrastructure","interoperability","tokenisation"]
+};
+
+const genericRisk=candidate=>candidate.type==="crypto"
+  ?"Token adoption, liquidity, dilution and regulation can overwhelm a strong technology narrative."
+  :"Smaller or earlier-stage companies can face financing, execution, customer-concentration and valuation risk.";
+
+export function buildDiscoveryCandidates(assets=[],universe=[],limit=5){
+  const selected=new Set(assets.map(asset=>`${asset.ticker}:${asset.type}`));
+  const selectedTypes=new Set(assets.map(asset=>asset.type));
+  const focusThemes=[...new Set(assets.flatMap(asset=>asset.themes||[]))];
+  return universe.filter(candidate=>candidate?.ticker&&selectedTypes.has(candidate.type)&&!selected.has(`${candidate.ticker}:${candidate.type}`)).map(candidate=>{
+    const themes=[...new Set(candidate.themes||[])],directThemes=themes.filter(theme=>focusThemes.includes(theme)),links=[];
+    for(const focus of focusThemes)for(const theme of NEXT_WAVE_THEMES[focus]||[])if(themes.includes(theme)&&!directThemes.includes(theme))links.push({from:focus,to:theme});
+    const uniqueLinks=[...new Map(links.map(link=>[`${link.from}:${link.to}`,link])).values()],underFollowed=Math.max(0,Math.min(100,Math.round(Number(candidate.underFollowed)||50)));
+    const riskLevel=Math.max(1,Math.min(3,Math.round(Number(candidate.riskLevel)||2)));
+    const score=Math.max(1,Math.min(95,Math.round(15+Math.min(50,directThemes.length*25)+Math.min(25,uniqueLinks.length*12)+underFollowed*.2-(riskLevel-1)*4)));
+    const connection=directThemes.length
+      ?`Direct theme overlap: ${directThemes.join(", ")}.`
+      :uniqueLinks.length?`Adjacent theme: ${uniqueLinks[0].from} → ${uniqueLinks[0].to}.`:`A broader under-followed candidate outside the mapped themes.`;
+    const potential=candidate.potential||`Investigate whether its ${themes[0]||candidate.type} exposure is producing durable ${candidate.type==="crypto"?"usage and adoption":"revenue and operating progress"}.`;
+    return{ticker:candidate.ticker,type:candidate.type,name:candidate.name||candidate.ticker,themes,directThemes,adjacentLinks:uniqueLinks,underFollowed,riskLevel,score,connection,potential,risk:candidate.risk||genericRisk(candidate)};
+  }).filter(candidate=>candidate.underFollowed>=50&&(!focusThemes.length||candidate.directThemes.length||candidate.adjacentLinks.length)).sort((a,b)=>b.score-a.score||b.underFollowed-a.underFollowed||a.ticker.localeCompare(b.ticker)).slice(0,limit);
+}
+
 export function buildEvidenceAnalysis(assets=[]){
   const names=assets.map(asset=>asset.ticker),anchor=assets[0],comparisons=assets.slice(1);
   const sharedThemes=anchor?anchor.themes.filter(theme=>comparisons.some(asset=>asset.themes.includes(theme))):[];

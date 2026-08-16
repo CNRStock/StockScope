@@ -43,6 +43,26 @@ function cited(value,sourceMap){
   return escapeHtml(value).replace(/\[(S\d+)\]/g,(match,id)=>{const source=sourceMap.get(id);return source&&/^https:\/\//i.test(source.url)?`<a class='citation' href='${escapeHtml(source.url)}' target='_blank' rel='noopener noreferrer'>[${id}]</a>`:match});
 }
 
+const candidateMarketSymbol=candidate=>candidate.type==='crypto'?`${candidate.ticker}-USD.CC`:`${candidate.ticker}.US`;
+async function loadCandidateQuotes(candidates){
+  if(!candidates.length)return;
+  try{
+    const symbols=candidates.map(candidateMarketSymbol),response=await fetch(`/api/quotes?symbols=${encodeURIComponent(symbols.join(','))}`),data=await response.json();
+    if(!response.ok)throw new Error(data.error||'Candidate prices are unavailable.');
+    const quotes=new Map(data.quotes.map(quote=>[quote.symbol.toUpperCase(),quote]));
+    candidates.forEach(candidate=>{const box=document.querySelector(`[data-candidate-price="${CSS.escape(`${candidate.ticker}:${candidate.type}`)}"]`),quote=quotes.get(candidateMarketSymbol(candidate));if(!box)return;if(!quote){box.textContent='Price unavailable';return}const change=Number.isFinite(quote.changePct)?quote.changePct:null;box.innerHTML=`<strong>${usd(quote.price)}</strong><small class='${change===null?'':change>=0?'positive':'negative'}'>${change===null?'Delayed price':`${change>=0?'+':''}${num(change,2)}% today`}</small>`});
+  }catch{$$('[data-candidate-price]').forEach(box=>box.textContent='Price unavailable')}
+}
+
+function renderCandidates(data){
+  const candidates=Array.isArray(data.candidates)?data.candidates:[],container=$('#researchCandidates');
+  $('#candidateCount').textContent=`${candidates.length} research lead${candidates.length===1?'':'s'}`;
+  container.innerHTML=candidates.length?candidates.map((candidate,index)=>`<article class='candidate-card'><header><span class='candidate-rank'>${index+1}</span><div><small>${candidate.type.toUpperCase()} · EMERGING RESEARCH</small><h3>${escapeHtml(candidate.ticker)}</h3><p>${escapeHtml(candidate.name)}</p></div><b>${candidate.score}<small>/100 fit</small></b></header><div class='candidate-themes'>${candidate.themes.map(theme=>`<span>${escapeHtml(theme)}</span>`).join('')}</div><p class='candidate-connection'>${escapeHtml(candidate.connection)}</p><div class='candidate-case'><span>Why investigate</span><p>${escapeHtml(candidate.potential)}</p></div><div class='candidate-risk'><span>Risk check</span><p>${escapeHtml(candidate.risk)}</p></div><footer><div data-candidate-price='${escapeHtml(`${candidate.ticker}:${candidate.type}`)}'>Loading delayed price…</div><span>Under-followed signal <b>${candidate.underFollowed}/100</b></span></footer><button type='button' data-compare-candidate='${index}'>Compare with ${escapeHtml(data.assets[0].ticker)} →</button></article>`).join(''):`<div class='empty'>No mapped emerging candidate was connected strongly enough to this comparison.</div>`;
+  $('#candidateMethod').textContent=data.candidateMethod||'Candidate rankings are research starting points—not recommendations, price targets or forecasts.';
+  $$('[data-compare-candidate]').forEach(button=>button.addEventListener('click',()=>{const candidate=candidates[Number(button.dataset.compareCandidate)],anchor=data.assets[0];assets=[{ticker:anchor.ticker,type:anchor.type,name:anchor.name},{ticker:candidate.ticker,type:candidate.type,name:candidate.name}];saveAssets();renderAssets();$('#researchResult').classList.add('hidden');$('#researchMessage').textContent=`${candidate.ticker} added. Build the comparison to inspect its market, filing and news evidence.`;document.querySelector('.research-builder').scrollIntoView({behavior:'smooth',block:'start'})}));
+  loadCandidateQuotes(candidates);
+}
+
 function renderBrief(data){
   const sourceMap=new Map(data.sources.map(source=>[source.id,source])),analysis=data.analysis;
   $('#researchTitle').textContent=data.assets.map(asset=>asset.ticker).join(' vs ');
@@ -54,6 +74,7 @@ function renderBrief(data){
   const claims=(selector,items)=>$(selector).innerHTML=items.map(item=>`<div class='research-claim'><b>${escapeHtml(item.asset)}</b><strong>${escapeHtml(item.point)}</strong><p>${cited(item.evidence,sourceMap)}</p></div>`).join('');
   claims('#researchCatalysts',analysis.catalysts);claims('#researchRisks',analysis.risks);
   $('#researchVerdict').innerHTML=cited(analysis.verdict,sourceMap);$('#researchQuestions').innerHTML=analysis.questions.map(question=>`<li>${escapeHtml(question)}</li>`).join('');
+  renderCandidates(data);
   $('#researchSources').innerHTML=data.sources.map(source=>`<a href='${escapeHtml(source.url)}' target='_blank' rel='noopener noreferrer'><b>${escapeHtml(source.id)}</b><span><strong>${escapeHtml(source.title)}</strong><small>${escapeHtml(source.publisher)}${source.date?` · ${escapeHtml(source.date)}`:''}</small></span><em>↗</em></a>`).join('');
   $('#researchLegend').innerHTML=data.assets.map((asset,index)=>`<span><i style='background:${colours[index]}'></i>${escapeHtml(asset.ticker)}</span>`).join('');
   $('#researchEvidence').innerHTML=data.assets.map((asset,index)=>{

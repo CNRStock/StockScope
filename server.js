@@ -10,7 +10,7 @@ import { summarizeSecCompanyFacts } from "./sec-fundamentals.js";
 import { compareProfiles } from "./similarity.js";
 import { scoreCrypto } from "./crypto-model.js";
 import { evidenceFromPrices,allocateEvidence } from "./portfolio-model.js";
-import { summarizeResearchHistory,buildEvidenceAnalysis,RESEARCH_SCHEMA } from "./research-model.js";
+import { summarizeResearchHistory,buildEvidenceAnalysis,buildDiscoveryCandidates,RESEARCH_SCHEMA } from "./research-model.js";
 import { securityHeaders,createRateLimiter } from "./security.js";
 import { subscriptionRecord } from "./billing-model.js";
 
@@ -276,6 +276,14 @@ const THEME_MAP={
   VRT:["data centres","power and cooling"],POWL:["power and cooling","grid infrastructure"],NVT:["power and cooling","grid infrastructure"],SYM:["robotics","automation"],SERV:["robotics","automation"],
   S:["cybersecurity","AI software"],TENB:["cybersecurity"],PLTR:["AI software"],DDOG:["AI software","data centres"],NET:["networking","cybersecurity"],RXRX:["AI drug discovery","biotechnology"],SDGR:["AI drug discovery","biotechnology"],ASTS:["space infrastructure"]
 };
+const STOCK_DISCOVERY_META={
+  NVDA:{name:"NVIDIA",underFollowed:8,riskLevel:1},AMD:{name:"Advanced Micro Devices",underFollowed:16,riskLevel:1},MRVL:{name:"Marvell Technology",underFollowed:48,riskLevel:2},ANET:{name:"Arista Networks",underFollowed:28,riskLevel:1},
+  IONQ:{name:"IonQ",underFollowed:58,riskLevel:3},RGTI:{name:"Rigetti Computing",underFollowed:92,riskLevel:3},QBTS:{name:"D-Wave Quantum",underFollowed:88,riskLevel:3},QUBT:{name:"Quantum Computing Inc.",underFollowed:95,riskLevel:3},
+  COHR:{name:"Coherent",underFollowed:62,riskLevel:2},LITE:{name:"Lumentum",underFollowed:72,riskLevel:2},AAOI:{name:"Applied Optoelectronics",underFollowed:90,riskLevel:3},VRT:{name:"Vertiv",underFollowed:30,riskLevel:2},
+  POWL:{name:"Powell Industries",underFollowed:72,riskLevel:2},NVT:{name:"nVent Electric",underFollowed:58,riskLevel:2},SYM:{name:"Symbotic",underFollowed:62,riskLevel:3},SERV:{name:"Serve Robotics",underFollowed:93,riskLevel:3},
+  S:{name:"SentinelOne",underFollowed:58,riskLevel:2},TENB:{name:"Tenable",underFollowed:68,riskLevel:2},PLTR:{name:"Palantir",underFollowed:12,riskLevel:2},DDOG:{name:"Datadog",underFollowed:28,riskLevel:2},NET:{name:"Cloudflare",underFollowed:24,riskLevel:2},
+  RXRX:{name:"Recursion Pharmaceuticals",underFollowed:86,riskLevel:3},SDGR:{name:"Schrödinger",underFollowed:80,riskLevel:3},ASTS:{name:"AST SpaceMobile",underFollowed:66,riskLevel:3}
+};
 const SIMILARITY_UNIVERSE=Object.keys(THEME_MAP).filter(ticker=>ticker!=="NVDA");
 const secFactsCache=new Map();
 const pause=ms=>new Promise(resolve=>setTimeout(resolve,ms));
@@ -318,12 +326,16 @@ async function similarCompanies(reqUrl,res){
 }
 
 const CRYPTO_UNIVERSE={
-  bitcoin:{symbol:"BTC",themes:["store of value","payments"]},ethereum:{symbol:"ETH",themes:["smart contracts","defi","infrastructure"]},dogecoin:{symbol:"DOGE",themes:["payments","community"]},
-  "quant-network":{symbol:"QNT",themes:["interoperability","enterprise infrastructure"]},chainlink:{symbol:"LINK",themes:["oracles","infrastructure","interoperability"]},near:{symbol:"NEAR",themes:["smart contracts","AI","infrastructure"]},
-  bittensor:{symbol:"TAO",themes:["AI","decentralised compute"]},"render-token":{symbol:"RENDER",themes:["AI","decentralised compute"]},"fetch-ai":{symbol:"FET",themes:["AI","agents"]},
-  "ondo-finance":{symbol:"ONDO",themes:["tokenisation","defi"]},"hedera-hashgraph":{symbol:"HBAR",themes:["enterprise infrastructure","payments"]},"injective-protocol":{symbol:"INJ",themes:["defi","infrastructure"]},
-  arweave:{symbol:"AR",themes:["storage","infrastructure"]},"akash-network":{symbol:"AKT",themes:["decentralised compute","AI"]},"the-graph":{symbol:"GRT",themes:["data","infrastructure"]}
+  bitcoin:{symbol:"BTC",name:"Bitcoin",themes:["store of value","payments"],underFollowed:5,riskLevel:2},ethereum:{symbol:"ETH",name:"Ethereum",themes:["smart contracts","defi","infrastructure"],underFollowed:10,riskLevel:2},dogecoin:{symbol:"DOGE",name:"Dogecoin",themes:["payments","community"],underFollowed:18,riskLevel:3},
+  "quant-network":{symbol:"QNT",name:"Quant",themes:["interoperability","enterprise infrastructure"],underFollowed:86,riskLevel:3},chainlink:{symbol:"LINK",name:"Chainlink",themes:["oracles","infrastructure","interoperability"],underFollowed:42,riskLevel:2},near:{symbol:"NEAR",name:"NEAR Protocol",themes:["smart contracts","AI","infrastructure"],underFollowed:62,riskLevel:3},
+  bittensor:{symbol:"TAO",name:"Bittensor",themes:["AI","decentralised compute"],underFollowed:68,riskLevel:3},"render-token":{symbol:"RENDER",name:"Render",themes:["AI","decentralised compute"],underFollowed:58,riskLevel:3},"fetch-ai":{symbol:"FET",name:"Artificial Superintelligence Alliance",themes:["AI","agents"],underFollowed:70,riskLevel:3},
+  "ondo-finance":{symbol:"ONDO",name:"Ondo",themes:["tokenisation","defi"],underFollowed:58,riskLevel:3},"hedera-hashgraph":{symbol:"HBAR",name:"Hedera",themes:["enterprise infrastructure","payments"],underFollowed:52,riskLevel:3},"injective-protocol":{symbol:"INJ",name:"Injective",themes:["defi","infrastructure"],underFollowed:66,riskLevel:3},
+  arweave:{symbol:"AR",name:"Arweave",themes:["storage","infrastructure"],underFollowed:76,riskLevel:3},"akash-network":{symbol:"AKT",name:"Akash Network",themes:["decentralised compute","AI"],underFollowed:88,riskLevel:3},"the-graph":{symbol:"GRT",name:"The Graph",themes:["data","infrastructure"],underFollowed:64,riskLevel:3}
 };
+const DISCOVERY_UNIVERSE=[
+  ...Object.entries(THEME_MAP).map(([ticker,themes])=>({ticker,type:"stock",themes,...(STOCK_DISCOVERY_META[ticker]||{})})),
+  ...Object.values(CRYPTO_UNIVERSE).map(({symbol,name,themes,underFollowed,riskLevel})=>({ticker:symbol,type:"crypto",name,themes,underFollowed,riskLevel}))
+];
 let cryptoMarketsCache={at:0,data:null};
 async function cryptoSimilar(reqUrl,res){
   const symbol=String(reqUrl.searchParams.get("symbol")||"").toUpperCase();
@@ -424,7 +436,8 @@ async function comparativeResearch(reqUrl,res){
     }
     let analysis=buildEvidenceAnalysis(resultAssets),ai={enabled:Boolean(process.env.OPENAI_API_KEY),used:false,model:null,reason:process.env.OPENAI_API_KEY?"AI analysis could not be completed; the evidence fallback is shown.":"Add OPENAI_API_KEY to enable the cited AI brief."};
     if(process.env.OPENAI_API_KEY)try{const generated=await generateAIResearch(resultAssets,sources);analysis=generated.analysis;ai={enabled:true,used:true,model:generated.model,reason:null}}catch(error){console.error("AssetSeek AI research fallback:",error.message);ai.reason=error.message}
-    return json(res,200,{generatedAt:new Date().toISOString(),provider:"EODHD market data · SEC EDGAR fundamentals · sourced news",assets:resultAssets,analysis,sources,ai});
+    const candidates=buildDiscoveryCandidates(resultAssets,DISCOVERY_UNIVERSE,5);
+    return json(res,200,{generatedAt:new Date().toISOString(),provider:"EODHD market data · SEC EDGAR fundamentals · sourced news",assets:resultAssets,analysis,candidates,candidateMethod:"Mapped theme overlap, adjacent next-wave themes and a curated under-followed signal. This is a research queue, not a return forecast.",sources,ai});
   }catch(error){return json(res,502,{error:"Could not build this comparison.",detail:error.message})}
 }
 
